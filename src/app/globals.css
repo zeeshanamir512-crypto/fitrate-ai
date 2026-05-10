@@ -1,0 +1,313 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-[#030712] text-slate-100 antialiased;
+}
+
+/* --- Mesh grid + grain --- */
+.fitrate-page-texture {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 85% 65% at 50% -10%, black 25%, transparent 72%);
+}
+
+.fitrate-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+}
+
+.fitrate-mesh {
+  background: radial-gradient(ellipse 70% 50% at 50% -20%, rgba(99, 102, 241, 0.14), transparent),
+    radial-gradient(ellipse 50% 40% at 100% 50%, rgba(139, 92, 246, 0.08), transparent),
+    radial-gradient(ellipse 45% 35% at 0% 80%, rgba(34, 211, 238, 0.07), transparent);
+}
+
+/* --- Slow floating blobs --- */
+@keyframes blob-drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate(18px, -22px) scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes blob-drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-24px, 16px) scale(1.05);
+  }
+}
+
+@keyframes blob-drift-c {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(14px, 20px);
+  }
+}
+
+.fitrate-blob-a {
+  animation: blob-drift-a 22s ease-in-out infinite;
+}
+
+.fitrate-blob-b {
+  animation: blob-drift-b 26s ease-in-out infinite;
+}
+
+.fitrate-blob-c {
+  animation: blob-drift-c 19s ease-in-out infinite;
+}
+
+/* --- Title shine sweep --- */
+@keyframes shine-sweep {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
+}
+
+.fitrate-title-shine {
+  background-image: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 60%,
+    transparent 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: shine-sweep 7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fitrate-title-shine {
+    animation: none;
+  }
+}
+
+/* --- Hero particles --- */
+@keyframes hero-dot {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: translateY(-6px) scale(1.2);
+  }
+}
+
+.fitrate-hero-dot {
+  animation: hero-dot 4s ease-in-out infinite;
+}
+
+/* --- Floating badge --- */
+@keyframes float-badge {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.fitrate-float-badge {
+  animation: float-badge 5s ease-in-out infinite;
+}
+
+/* --- Upload icon bob --- */
+@keyframes icon-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.fitrate-upload-icon {
+  animation: icon-bob 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fitrate-blob-a,
+  .fitrate-blob-b,
+  .fitrate-blob-c,
+  .fitrate-hero-dot,
+  .fitrate-float-badge,
+  .fitrate-upload-icon {
+    animation: none !important;
+  }
+}
+
+/* --- Animated dashed border (upload) --- */
+@keyframes dash-spin {
+  to {
+    stroke-dashoffset: -80;
+  }
+}
+
+.fitrate-upload-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  border-radius: 1rem;
+}
+
+/* --- Button shine on hover --- */
+.btn-premium {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-premium::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.18) 50%, transparent 65%);
+  transform: translateX(-120%);
+  transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-premium:hover:not(:disabled)::after {
+  transform: translateX(120%);
+}
+
+.btn-premium:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up-soft {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow-soft {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 24px 2px rgba(139, 92, 246, 0.25);
+  }
+}
+
+@keyframes title-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.88;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in-up 0.55s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slide-up-soft 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-pulse-glow-badge {
+  animation: pulse-glow-soft 3.5s ease-in-out infinite;
+}
+
+.animate-title-glow {
+  animation: title-glow-pulse 4s ease-in-out infinite;
+}
+
+@keyframes pill-glow-soft {
+  0%,
+  100% {
+    box-shadow: 0 0 18px -8px rgba(251, 191, 36, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 32px -6px rgba(251, 191, 36, 0.55);
+  }
+}
+
+.fitrate-pill-pulse {
+  animation: pill-glow-soft 3.5s ease-in-out infinite;
+}
+
+@keyframes occasion-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.fitrate-occasion-menu {
+  animation: occasion-menu-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-pulse-glow-badge,
+  .animate-title-glow {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .fitrate-blob-a,
+  .fitrate-blob-b,
+  .fitrate-blob-c,
+  .fitrate-pill-pulse {
+    animation: none !important;
+  }
+
+  .btn-premium::after {
+    display: none;
+  }
+
+  .fitrate-occasion-menu {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

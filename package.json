@@ -1,0 +1,29 @@
+{
+  "name": "fitrate-ai-clean",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "fix-encoding": "node scripts/fix-analyze-route-encoding.cjs",
+    "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true});\" && next dev"
+  },
+  "dependencies": {
+    "framer-motion": "^12.38.0",
+    "html-to-image": "^1.11.13",
+    "next": "^16.2.6",
+    "openai": "^6.37.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.7.2"
+  }
+}
