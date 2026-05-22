@@ -1,1 +1,13 @@
 node_modules
+
+# Next.js
+.next/
+out/
+
+# Env
+.env*.local
+
+# Debug / OS
+npm-debug.log*
+.DS_Store
+Thumbs.db

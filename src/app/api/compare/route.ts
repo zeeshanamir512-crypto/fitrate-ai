@@ -1,9 +1,12 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
+import { jsonPayload } from "@/lib/jsonResponse";
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
 
 export const maxDuration = 120;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type OccasionMode = "Casual" | "School" | "Date" | "Gym" | "Party" | "Streetwear" | "Smart casual";
 
@@ -186,40 +189,58 @@ async function blobsToPayload(request: Request): Promise<
 > {
   const contentType = request.headers.get("content-type") || "";
   if (!contentType.includes("multipart/form-data")) {
-    return NextResponse.json({ error: "Use multipart/form-data with fileA and fileB." }, { status: 400 });
+    return jsonPayload({ error: "Use multipart/form-data with fileA and fileB." }, 400);
   }
 
-  const formData = await request.formData();
-  const blobA = formData.get("fileA");
-  const blobB = formData.get("fileB");
-  const occasionRaw = String(formData.get("occasion") ?? "Casual");
-  const occasion = OCCASIONS.includes(occasionRaw as OccasionMode) ? (occasionRaw as OccasionMode) : "Casual";
+  try {
+    const formData = await request.formData();
+    const blobA = formData.get("fileA");
+    const blobB = formData.get("fileB");
+    const occasionRaw = String(formData.get("occasion") ?? "Casual");
+    const occasion = OCCASIONS.includes(occasionRaw as OccasionMode) ? (occasionRaw as OccasionMode) : "Casual";
 
-  if (!(blobA instanceof Blob) || !(blobB instanceof Blob)) {
-    return NextResponse.json({ error: "Missing fileA or fileB (image uploads)." }, { status: 400 });
+    if (!(blobA instanceof Blob) || !(blobB instanceof Blob)) {
+      return jsonPayload({ error: "Missing fileA or fileB (image uploads)." }, 400);
+    }
+
+    if (blobA.size > MAX_UPLOAD_BYTES || blobB.size > MAX_UPLOAD_BYTES) {
+      return jsonPayload({ error: "Each photo must be 4 MB or smaller." }, 400);
+    }
+
+    async function blobToUrl(blob: Blob): Promise<string> {
+      const mime = blob.type.startsWith("image/") ? blob.type : "image/jpeg";
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const base64 = Buffer.from(bytes).toString("base64");
+      return `data:${mime};base64,${base64}`;
+    }
+
+    const [imageAUrl, imageBUrl] = await Promise.all([blobToUrl(blobA), blobToUrl(blobB)]);
+
+    return { imageAUrl, imageBUrl, occasion };
+  } catch (err) {
+    console.error("Compare multipart parse error:", err);
+    return jsonPayload(
+      { error: "Could not read uploads. Try smaller JPG/PNG files, or wait until the dev server finishes compiling." },
+      400
+    );
   }
-
-  if (blobA.size > MAX_UPLOAD_BYTES || blobB.size > MAX_UPLOAD_BYTES) {
-    return NextResponse.json({ error: "Each photo must be 4 MB or smaller." }, { status: 400 });
-  }
-
-  async function blobToUrl(blob: Blob): Promise<string> {
-    const mime = blob.type.startsWith("image/") ? blob.type : "image/jpeg";
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    const base64 = Buffer.from(bytes).toString("base64");
-    return `data:${mime};base64,${base64}`;
-  }
-
-  const [imageAUrl, imageBUrl] = await Promise.all([blobToUrl(blobA), blobToUrl(blobB)]);
-
-  return { imageAUrl, imageBUrl, occasion };
 }
 
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
-    if (!apiKey) {
-      return NextResponse.json({ error: "Missing OPENAI_API_KEY in environment variables." }, { status: 500 });
+    const placeholder =
+      !apiKey ||
+      apiKey === "your_openai_api_key_here" ||
+      /^your[_\s-]*openai[_\s-]*api[_\s-]*key/i.test(apiKey);
+    if (placeholder) {
+      return jsonPayload(
+        {
+          error:
+            "Missing or placeholder OPENAI_API_KEY. Add a real key to .env.local (see .env.example), save, and restart npm run dev."
+        },
+        500
+      );
     }
 
     const payload = await blobsToPayload(request);
@@ -324,20 +345,28 @@ Strict field rules:
 
     const outputText = completion.choices[0]?.message?.content;
     if (!outputText) {
-      return NextResponse.json({ error: "No comparison returned from AI model." }, { status: 502 });
+      return jsonPayload({ error: "No comparison returned from AI model." }, 502);
     }
 
     let parsed: Partial<OutfitCompareResult>;
     try {
       parsed = parseJsonFromModelText<Partial<OutfitCompareResult>>(outputText);
     } catch {
-      return NextResponse.json({ error: "AI returned invalid JSON. Try again." }, { status: 502 });
+      return jsonPayload({ error: "AI returned invalid JSON. Try again." }, 502);
     }
 
-    return NextResponse.json({ compare: finalizeCompare(parsed, occasion) });
+    let compare: OutfitCompareResult;
+    try {
+      compare = finalizeCompare(parsed, occasion);
+    } catch (finalizeErr) {
+      console.error("finalizeCompare error:", finalizeErr);
+      return jsonPayload({ error: "Could not finalize comparison. Please try again." }, 502);
+    }
+
+    return jsonPayload({ compare }, 200);
   } catch (error: unknown) {
     console.error("Compare API error:", error);
     const { status, message } = errorMessageForUser(error);
-    return NextResponse.json({ error: message }, { status });
+    return jsonPayload({ error: message }, status);
   }
 }

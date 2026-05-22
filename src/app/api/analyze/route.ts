@@ -1,9 +1,12 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
+import { jsonPayload } from "@/lib/jsonResponse";
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
 
 export const maxDuration = 120;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type OccasionMode = "Casual" | "School" | "Date" | "Gym" | "Party" | "Streetwear" | "Smart casual";
 type Difficulty = "Easy" | "Medium" | "Hard";
@@ -683,48 +686,70 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
   const type = request.headers.get("content-type") || "";
 
   if (type.includes("multipart/form-data")) {
-    const formData = await request.formData();
-    const file = formData.get("file");
-    const occasionRaw = String(formData.get("occasion") ?? "Casual");
-    const occasion = OCCASIONS.includes(occasionRaw as OccasionMode) ? (occasionRaw as OccasionMode) : "Casual";
-    if (!(file instanceof Blob)) {
-      return NextResponse.json({ error: "Missing image file (expected field name: file)." }, { status: 400 });
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      return NextResponse.json(
-        { error: `File too large (max ${MAX_UPLOAD_BYTES / 1024 / 1024} MB). Use a smaller image.` },
-        { status: 400 }
+    try {
+      const formData = await request.formData();
+      const file = formData.get("file");
+      const occasionRaw = String(formData.get("occasion") ?? "Casual");
+      const occasion = OCCASIONS.includes(occasionRaw as OccasionMode) ? (occasionRaw as OccasionMode) : "Casual";
+      if (!(file instanceof Blob)) {
+        return jsonPayload({ error: "Missing image file (expected field name: file)." }, 400);
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        return jsonPayload(
+          { error: `File too large (max ${MAX_UPLOAD_BYTES / 1024 / 1024} MB). Use a smaller image.` },
+          400
+        );
+      }
+      const mime = file.type && file.type.startsWith("image/") ? file.type : "image/jpeg";
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const base64 = Buffer.from(bytes).toString("base64");
+      return {
+        imageDataUrl: `data:${mime};base64,${base64}`,
+        occasion
+      };
+    } catch (err) {
+      console.error("Analyze multipart parse error:", err);
+      return jsonPayload(
+        { error: "Could not read the upload. Try JPG or PNG under 4 MB, or wait until the dev server finishes compiling." },
+        400
       );
     }
-    const mime = file.type && file.type.startsWith("image/") ? file.type : "image/jpeg";
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const base64 = Buffer.from(bytes).toString("base64");
-    return {
-      imageDataUrl: `data:${mime};base64,${base64}`,
-      occasion
-    };
   }
 
-  const body = (await request.json()) as { imageDataUrl?: string; occasion?: OccasionMode };
-  const imageDataUrl = body?.imageDataUrl;
-  const occasion = OCCASIONS.includes(body.occasion as OccasionMode) ? (body.occasion as OccasionMode) : "Casual";
-  if (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/")) {
-    return NextResponse.json({ error: "Invalid image format. Use multipart upload or a data:image/… URL." }, { status: 400 });
+  try {
+    const body = (await request.json()) as { imageDataUrl?: string; occasion?: OccasionMode };
+    const imageDataUrl = body?.imageDataUrl;
+    const occasion = OCCASIONS.includes(body.occasion as OccasionMode) ? (body.occasion as OccasionMode) : "Casual";
+    if (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/")) {
+      return jsonPayload({ error: "Invalid image format. Use multipart upload or a data:image/… URL." }, 400);
+    }
+    if (imageDataUrl.length > MAX_UPLOAD_BYTES * 2) {
+      return jsonPayload({ error: "Image payload too large. Use a smaller file." }, 400);
+    }
+    return {
+      imageDataUrl,
+      occasion
+    };
+  } catch {
+    return jsonPayload({ error: "Invalid JSON body." }, 400);
   }
-  if (imageDataUrl.length > MAX_UPLOAD_BYTES * 2) {
-    return NextResponse.json({ error: "Image payload too large. Use a smaller file." }, { status: 400 });
-  }
-  return {
-    imageDataUrl,
-    occasion
-  };
 }
 
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
-    if (!apiKey) {
-      return NextResponse.json({ error: "Missing OPENAI_API_KEY in environment variables." }, { status: 500 });
+    const placeholder =
+      !apiKey ||
+      apiKey === "your_openai_api_key_here" ||
+      /^your[_\s-]*openai[_\s-]*api[_\s-]*key/i.test(apiKey);
+    if (placeholder) {
+      return jsonPayload(
+        {
+          error:
+            "Missing or placeholder OPENAI_API_KEY. Add a real key to .env.local (see .env.example), save, and restart npm run dev."
+        },
+        500
+      );
     }
 
     const payloadOrError = await getImageDataUrl(request);
@@ -833,20 +858,28 @@ Streetwear accessory & pants notes:
 
     const outputText = completion.choices[0]?.message?.content;
     if (!outputText) {
-      return NextResponse.json({ error: "No analysis returned from AI model." }, { status: 502 });
+      return jsonPayload({ error: "No analysis returned from AI model." }, 502);
     }
 
     let parsed: Partial<AnalysisResult>;
     try {
       parsed = parseJsonFromModelText<Partial<AnalysisResult>>(outputText);
     } catch {
-      return NextResponse.json({ error: "AI returned invalid JSON. Please try again." }, { status: 502 });
+      return jsonPayload({ error: "AI returned invalid JSON. Please try again." }, 502);
     }
 
-    return NextResponse.json({ result: sanitizeResult(parsed, occasion) });
+    let result: AnalysisResult;
+    try {
+      result = sanitizeResult(parsed, occasion);
+    } catch (sanitizeErr) {
+      console.error("sanitizeResult error:", sanitizeErr);
+      return jsonPayload({ error: "Could not finalize analysis. Please try again." }, 502);
+    }
+
+    return jsonPayload({ result }, 200);
   } catch (error: unknown) {
     console.error("Analyze API error:", error);
     const { status, message } = errorMessageForUser(error);
-    return NextResponse.json({ error: message }, { status });
+    return jsonPayload({ error: message }, status);
   }
 }

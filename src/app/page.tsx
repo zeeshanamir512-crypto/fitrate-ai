@@ -5,6 +5,8 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { LiveAnalysisPreview } from "@/components/LiveAnalysisPreview";
 import { OccasionSelect, type OccasionMode } from "@/components/OccasionSelect";
+import { prepareImageFile, readFileAsDataUrl, retainFile } from "@/lib/prepareImageFile";
+import { readApiJson } from "@/lib/readApiJson";
 type Difficulty = "Easy" | "Medium" | "Hard";
 type AppMode = "single" | "compare";
 
@@ -60,6 +62,23 @@ type AnalysisResult = {
 };
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
+
+const ATMOS_SPARKS = [
+  { t: "9%", l: "11%", dur: "12s", del: "0s" },
+  { t: "17%", l: "76%", dur: "14s", del: "1.2s" },
+  { t: "34%", l: "23%", dur: "11s", del: "2.1s" },
+  { t: "41%", l: "89%", dur: "13s", del: "0.4s" },
+  { t: "56%", l: "7%", dur: "15s", del: "3.2s" },
+  { t: "61%", l: "51%", dur: "10s", del: "1.6s" },
+  { t: "71%", l: "93%", dur: "12s", del: "2.7s" },
+  { t: "86%", l: "36%", dur: "13s", del: "0.9s" },
+  { t: "22%", l: "58%", dur: "16s", del: "4s" },
+  { t: "48%", l: "69%", dur: "11s", del: "2.4s" },
+  { t: "13%", l: "44%", dur: "14s", del: "3.6s" },
+  { t: "77%", l: "19%", dur: "12s", del: "1.5s" },
+  { t: "92%", l: "82%", dur: "13s", del: "5s" },
+  { t: "63%", l: "31%", dur: "15s", del: "2s" }
+] as const;
 
 function formatCompareScore(score: number): string {
   const rounded = Math.min(10, Math.max(1, Math.round(score * 2) / 2));
@@ -136,6 +155,7 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isPreparingImage, setIsPreparingImage] = useState(false);
 
   const [previewUrlA, setPreviewUrlA] = useState<string | null>(null);
   const [previewUrlB, setPreviewUrlB] = useState<string | null>(null);
@@ -238,18 +258,50 @@ export default function Home() {
   }
 
   function handleCompareImageA(event: React.ChangeEvent<HTMLInputElement>) {
-    handleCompareFilePick(event.target.files?.[0], "A");
-    event.target.value = "";
+    const file = event.target.files?.[0];
+    if (!file) return;
+    void handleCompareFilePick(file, "A", event.target);
   }
 
   function handleCompareImageB(event: React.ChangeEvent<HTMLInputElement>) {
-    handleCompareFilePick(event.target.files?.[0], "B");
-    event.target.value = "";
+    const file = event.target.files?.[0];
+    if (!file) return;
+    void handleCompareFilePick(file, "B", event.target);
   }
 
-  function handleCompareFilePick(file: File | undefined, side: "A" | "B") {
-    if (!file) return;
-    if (file.size > MAX_FILE_BYTES) {
+  async function handleCompareFilePick(file: File, side: "A" | "B", input?: HTMLInputElement) {
+    setIsPreparingImage(true);
+    setCompareError(null);
+    setCompareResult(null);
+
+    try {
+      const retained = await retainFile(file);
+      const previewDataUrl = await readFileAsDataUrl(retained);
+
+      if (side === "A") {
+        clearCompareBlobA();
+        setPreviewUrlA(previewDataUrl);
+      } else {
+        clearCompareBlobB();
+        setPreviewUrlB(previewDataUrl);
+      }
+
+      const prepared = await prepareImageFile(retained);
+      if (prepared.size > MAX_FILE_BYTES) {
+        if (side === "A") {
+          setPreviewUrlA(null);
+          setFileA(null);
+        } else {
+          setPreviewUrlB(null);
+          setFileB(null);
+        }
+        setCompareError(`Photo ${side} is too large (${Math.round(prepared.size / 1024 / 1024)} MB). Try another photo.`);
+        return;
+      }
+
+      if (side === "A") setFileA(prepared);
+      else setFileB(prepared);
+    } catch {
       if (side === "A") {
         clearCompareBlobA();
         setPreviewUrlA(null);
@@ -259,55 +311,59 @@ export default function Home() {
         setPreviewUrlB(null);
         setFileB(null);
       }
-      setCompareError(`Photo ${side} is too large (${Math.round(file.size / 1024 / 1024)} MB). Keep each photo under 4 MB.`);
-      return;
-    }
-    setCompareError(null);
-    setCompareResult(null);
-    const objectUrl = URL.createObjectURL(file);
-    if (side === "A") {
-      clearCompareBlobA();
-      compareBlobARef.current = objectUrl;
-      setPreviewUrlA(objectUrl);
-      setFileA(file);
-    } else {
-      clearCompareBlobB();
-      compareBlobBRef.current = objectUrl;
-      setPreviewUrlB(objectUrl);
-      setFileB(file);
+      setCompareError(
+        `Could not load photo ${side}. Try JPG/PNG, or on iPhone: Settings → Camera → Formats → Most Compatible.`
+      );
+    } finally {
+      setIsPreparingImage(false);
+      if (input) input.value = "";
     }
   }
 
-  function ingestSingleFile(file: File | undefined) {
-    if (!file) return;
-
-    if (file.size > MAX_FILE_BYTES) {
-      clearPreviewBlob();
-      setPreviewUrl(null);
-      setSelectedFile(null);
-      setErrorMessage(`Image is too large (${Math.round(file.size / 1024 / 1024)} MB). Use a photo under 4 MB.`);
-      return;
-    }
-
-    clearPreviewBlob();
+  async function ingestSingleFile(file: File, input?: HTMLInputElement) {
+    setIsPreparingImage(true);
     setErrorMessage(null);
     setResult(null);
 
-    const objectUrl = URL.createObjectURL(file);
-    previewBlobRef.current = objectUrl;
-    setPreviewUrl(objectUrl);
-    setSelectedFile(file);
+    try {
+      const retained = await retainFile(file);
+      const previewDataUrl = await readFileAsDataUrl(retained);
+      clearPreviewBlob();
+      setPreviewUrl(previewDataUrl);
+
+      const prepared = await prepareImageFile(retained);
+      if (prepared.size > MAX_FILE_BYTES) {
+        setPreviewUrl(null);
+        setSelectedFile(null);
+        setErrorMessage(`Image is too large (${Math.round(prepared.size / 1024 / 1024)} MB). Try another photo.`);
+        return;
+      }
+
+      setSelectedFile(prepared);
+    } catch {
+      clearPreviewBlob();
+      setPreviewUrl(null);
+      setSelectedFile(null);
+      setErrorMessage(
+        "Could not load this photo. Try JPG/PNG, or on iPhone: Settings → Camera → Formats → Most Compatible."
+      );
+    } finally {
+      setIsPreparingImage(false);
+      if (input) input.value = "";
+    }
   }
 
   function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
-    ingestSingleFile(event.target.files?.[0]);
-    event.target.value = "";
+    const file = event.target.files?.[0];
+    if (!file) return;
+    void ingestSingleFile(file, event.target);
   }
 
   function handleSingleDrop(event: React.DragEvent<HTMLLabelElement>) {
     event.preventDefault();
     setSingleDragOver(false);
-    ingestSingleFile(event.dataTransfer.files?.[0]);
+    const file = event.dataTransfer.files?.[0];
+    if (file) void ingestSingleFile(file);
   }
 
   function handleCompareDrop(event: React.DragEvent<HTMLLabelElement>, side: "A" | "B") {
@@ -315,7 +371,7 @@ export default function Home() {
     if (side === "A") setCompareDragA(false);
     else setCompareDragB(false);
     const file = event.dataTransfer.files?.[0];
-    if (file) handleCompareFilePick(file, side);
+    if (file) void handleCompareFilePick(file, side);
   }
 
   async function handleAnalyzeOutfit() {
@@ -339,13 +395,12 @@ export default function Home() {
         signal: controller.signal
       });
 
-      let data: { error?: string; result?: AnalysisResult };
-      try {
-        data = (await response.json()) as { error?: string; result?: AnalysisResult };
-      } catch {
-        setErrorMessage(`Server returned a non-JSON response (HTTP ${response.status}).`);
+      const parsed = await readApiJson<{ error?: string; result?: AnalysisResult }>(response);
+      if (!parsed.ok) {
+        setErrorMessage(parsed.message);
         return;
       }
+      const data = parsed.data;
 
       if (!response.ok) {
         setErrorMessage(data.error ?? "Something went wrong during analysis.");
@@ -392,13 +447,12 @@ export default function Home() {
         signal: controller.signal
       });
 
-      let data: { error?: string; compare?: CompareOutfitsResult };
-      try {
-        data = (await response.json()) as { error?: string; compare?: CompareOutfitsResult };
-      } catch {
-        setCompareError(`Server returned a non-JSON response (HTTP ${response.status}).`);
+      const parsed = await readApiJson<{ error?: string; compare?: CompareOutfitsResult }>(response);
+      if (!parsed.ok) {
+        setCompareError(parsed.message);
         return;
       }
+      const data = parsed.data;
 
       if (!response.ok) {
         setCompareError(data.error ?? "Comparison failed.");
@@ -474,10 +528,10 @@ export default function Home() {
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-[#030712] px-4 pb-16 pt-4 sm:px-6 sm:pb-24 sm:pt-6">
       <div
-        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_100%_72%_at_50%_-18%,rgba(99,102,241,0.32),transparent_56%),radial-gradient(ellipse_52%_42%_at_100%_4%,rgba(139,92,246,0.22),transparent_50%),radial-gradient(ellipse_48%_38%_at_0%_92%,rgba(34,211,238,0.16),transparent_48%)]"
+        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_110%_78%_at_50%_-16%,rgba(99,102,241,0.34),transparent_58%),radial-gradient(ellipse_56%_46%_at_100%_2%,rgba(139,92,246,0.24),transparent_52%),radial-gradient(ellipse_52%_42%_at_0%_94%,rgba(34,211,238,0.18),transparent_50%),radial-gradient(ellipse_40%_36%_at_72%_72%,rgba(167,139,250,0.08),transparent_55%)]"
         aria-hidden
       />
-      <div className="pointer-events-none fixed inset-0 -z-10 fitrate-mesh opacity-90" aria-hidden />
+      <div className="pointer-events-none fixed inset-0 -z-10 fitrate-mesh opacity-[0.92]" aria-hidden />
       <div
         className="fitrate-blob-a pointer-events-none fixed -right-28 top-0 -z-10 h-[min(420px,55vw)] w-[min(420px,90vw)] rounded-full bg-indigo-600/32 blur-[110px]"
         aria-hidden
@@ -490,7 +544,26 @@ export default function Home() {
         className="fitrate-blob-c pointer-events-none fixed left-[28%] top-[42%] -z-10 h-[280px] w-[280px] rounded-full bg-violet-600/[0.2] blur-[85px]"
         aria-hidden
       />
-      <div className="pointer-events-none fixed inset-0 -z-10 fitrate-page-texture fitrate-noise opacity-[0.6]" aria-hidden />
+      <div className="pointer-events-none fixed inset-0 -z-10 fitrate-page-texture fitrate-noise opacity-[0.62]" aria-hidden />
+
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden>
+        <div className="fitrate-atmos-aurora absolute -left-[28%] top-[6%] h-[min(560px,72vh)] w-[min(920px,92vw)] rounded-[50%] bg-[radial-gradient(ellipse_at_center,rgba(99,102,241,0.26)_0%,transparent_70%)] blur-[100px]" />
+        <div className="fitrate-atmos-aurora fitrate-atmos-aurora-delay absolute -right-[22%] bottom-[10%] h-[min(460px,58vh)] w-[min(760px,88vw)] rounded-[50%] bg-[radial-gradient(ellipse_at_center,rgba(34,211,238,0.16)_0%,transparent_68%)] blur-[88px]" />
+        {ATMOS_SPARKS.map((s, i) => (
+          <span
+            key={`${s.t}-${s.l}-${i}`}
+            className="fitrate-atmos-spark"
+            style={
+              {
+                top: s.t,
+                left: s.l,
+                ["--atmos-dur"]: s.dur,
+                ["--atmos-del"]: s.del
+              } as React.CSSProperties
+            }
+          />
+        ))}
+      </div>
 
       <nav className="sticky top-3 z-[70] mx-auto mb-6 flex max-w-6xl justify-center px-1 sm:top-4">
         <div className="flex w-full max-w-5xl items-center justify-between gap-3 rounded-2xl border border-white/[0.1] bg-slate-950/70 px-3 py-2.5 shadow-[0_20px_60px_-18px_rgba(79,70,229,0.45)] backdrop-blur-2xl ring-1 ring-indigo-400/20 sm:rounded-full sm:px-5 sm:py-2">
@@ -522,23 +595,28 @@ export default function Home() {
       <div className="relative mx-auto max-w-6xl scroll-mt-28">
         <div className="relative mb-10 lg:mb-14 lg:grid lg:grid-cols-[1fr,minmax(260px,300px)] lg:items-center lg:gap-10">
           <header className="animate-fade-in relative text-center lg:text-left">
-            <div className="pointer-events-none absolute inset-0 -z-0 overflow-hidden rounded-3xl opacity-40 lg:opacity-100">
+            <div className="pointer-events-none absolute inset-0 -z-0 overflow-hidden rounded-3xl opacity-45 lg:opacity-100">
               <span className="fitrate-hero-dot absolute left-[8%] top-[12%] h-1 w-1 rounded-full bg-indigo-300 blur-[1px]" style={{ animationDelay: "0s" }} />
               <span className="fitrate-hero-dot absolute left-[22%] top-[55%] h-1.5 w-1.5 rounded-full bg-cyan-300/90 blur-[1px]" style={{ animationDelay: "0.4s" }} />
               <span className="fitrate-hero-dot absolute right-[18%] top-[20%] h-1 w-1 rounded-full bg-violet-300 blur-[1px]" style={{ animationDelay: "0.8s" }} />
               <span className="fitrate-hero-dot absolute right-[10%] top-[60%] h-1 w-1 rounded-full bg-indigo-200/80 blur-[1px]" style={{ animationDelay: "1.2s" }} />
+              <span className="fitrate-hero-dot absolute left-[46%] top-[28%] h-1 w-1 rounded-full bg-cyan-200/70 blur-[1px]" style={{ animationDelay: "1.6s" }} />
+              <span className="fitrate-hero-dot absolute left-[12%] top-[78%] h-[3px] w-[3px] rounded-full bg-violet-200/70 blur-[1px]" style={{ animationDelay: "2s" }} />
             </div>
+            <p className="relative mx-auto mb-3 max-w-xl text-[10px] font-semibold uppercase tracking-[0.32em] text-indigo-400/80 sm:text-[11px] lg:mx-0">
+              Neural style engine
+            </p>
             <div className="relative mx-auto inline-block lg:mx-0">
               <div
-                className="animate-title-glow pointer-events-none absolute -inset-12 rounded-full bg-gradient-to-r from-indigo-600/50 via-violet-500/40 to-cyan-400/30 blur-3xl"
+                className="fitrate-hero-title-glow pointer-events-none absolute -inset-16 rounded-full bg-gradient-to-r from-indigo-600/48 via-violet-500/38 to-cyan-400/28 blur-3xl"
                 aria-hidden
               />
-              <h1 className="relative text-5xl font-bold tracking-[-0.04em] sm:text-6xl md:text-7xl">
-                <span className="bg-gradient-to-br from-white via-indigo-50 to-slate-500 bg-clip-text text-transparent">FitRate </span>
+              <h1 className="fitrate-hero-headline relative text-5xl font-bold tracking-[-0.045em] sm:text-6xl md:text-7xl md:tracking-[-0.05em]">
+                <span className="bg-gradient-to-br from-white via-indigo-50 to-slate-400 bg-clip-text text-transparent">FitRate </span>
                 <span className="fitrate-title-shine bg-gradient-to-br from-indigo-200 via-white to-cyan-200 bg-clip-text text-transparent">AI</span>
               </h1>
             </div>
-            <p className="relative mx-auto mt-5 max-w-xl text-[15px] leading-relaxed text-slate-400 sm:text-lg lg:mx-0">
+            <p className="relative mx-auto mt-5 max-w-xl text-[15px] font-medium leading-relaxed text-slate-300 sm:text-lg lg:mx-0">
               Upload your outfit. Get rated by AI. Improve your style instantly.
             </p>
             <p className="relative mx-auto mt-3 max-w-lg text-sm leading-relaxed text-slate-500 lg:mx-0">
@@ -580,24 +658,7 @@ export default function Home() {
           </header>
 
           <aside className="animate-fade-in mx-auto mt-8 w-full max-w-[300px] lg:mx-0 lg:mt-0">
-            <div className="group relative rounded-2xl border border-white/[0.12] bg-gradient-to-br from-slate-900/95 via-slate-900/75 to-indigo-950/55 p-5 shadow-[0_28px_70px_-16px_rgba(79,70,229,0.55)] ring-1 ring-indigo-400/25 backdrop-blur-xl transition duration-300 hover:-translate-y-1.5 hover:border-indigo-400/45 hover:shadow-[0_36px_80px_-12px_rgba(99,102,241,0.55)]">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-indigo-300/90">Example</p>
-              <p className="mt-2 text-sm font-semibold text-white">Streetwear Fit</p>
-              <p className="mt-4 flex items-baseline gap-0.5 tabular-nums">
-                <span className="text-4xl font-bold tracking-tight text-white">8.5</span>
-                <span className="text-lg font-semibold text-slate-500">/10</span>
-              </p>
-              <div className="mt-5 space-y-2.5 border-t border-white/[0.08] pt-4 text-left text-xs leading-relaxed">
-                <p>
-                  <span className="font-semibold text-teal-400/95">Best:</span>{" "}
-                  <span className="text-slate-300">Strong silhouette</span>
-                </p>
-                <p>
-                  <span className="font-semibold text-rose-400/90">Improve:</span>{" "}
-                  <span className="text-slate-300">Sharper sneaker shape</span>
-                </p>
-              </div>
-            </div>
+            <LiveAnalysisPreview />
           </aside>
         </div>
 
@@ -633,12 +694,12 @@ export default function Home() {
 
         <div
           id="app-panel"
-          className="rounded-[1.35rem] bg-gradient-to-br from-indigo-500/45 via-violet-500/28 to-cyan-500/18 p-px shadow-[0_40px_120px_-36px_rgba(79,70,229,0.6)] ring-1 ring-white/[0.08]"
+          className="rounded-[1.35rem] bg-gradient-to-br from-indigo-500/48 via-violet-500/30 to-cyan-500/20 p-px shadow-[0_44px_128px_-34px_rgba(79,70,229,0.62),0_0_80px_-40px_rgba(34,211,238,0.14)] ring-1 ring-white/[0.1]"
         >
-          <div className="relative overflow-hidden rounded-[1.3rem] border border-white/[0.08] bg-slate-900/75 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.09)] backdrop-blur-2xl sm:p-8">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_20%_0%,rgba(99,102,241,0.12),transparent),radial-gradient(ellipse_60%_50%_at_100%_100%,rgba(34,211,238,0.08),transparent)]" aria-hidden />
+          <div className="relative overflow-hidden rounded-[1.3rem] border border-white/[0.1] bg-slate-900/70 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),inset_0_-1px_0_0_rgba(99,102,241,0.07)] backdrop-blur-3xl sm:p-8">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_85%_62%_at_18%_-4%,rgba(99,102,241,0.14),transparent),radial-gradient(ellipse_65%_52%_at_100%_102%,rgba(34,211,238,0.1),transparent),radial-gradient(ellipse_45%_38%_at_50%_108%,rgba(167,139,250,0.06),transparent)]" aria-hidden />
             <div className="relative">
-          <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Mode</p>
+          <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.26em] text-slate-400">Mode</p>
           <div className="relative mb-6 grid grid-cols-2 gap-1 rounded-2xl border border-white/[0.08] bg-slate-950/95 p-1 shadow-inner shadow-black/60 ring-1 ring-white/[0.05] sm:mb-7">
             <div
               className={`pointer-events-none absolute top-1 bottom-1 left-1 w-[calc(50%-0.125rem)] rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 shadow-[0_0_32px_-4px_rgba(99,102,241,0.75)] ring-1 ring-white/25 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
@@ -683,20 +744,27 @@ export default function Home() {
                   e.preventDefault();
                 }}
                 onDrop={handleSingleDrop}
-                className={`relative flex min-h-[168px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/35 bg-gradient-to-br from-indigo-500/[0.07] via-transparent to-cyan-500/[0.05] px-5 py-9 transition duration-300 sm:min-h-[200px] sm:px-6 sm:py-10 ${
+                className={`fitrate-upload-dropzone relative flex min-h-[168px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/40 bg-gradient-to-br from-indigo-500/[0.1] via-slate-950/20 to-cyan-500/[0.07] px-5 py-9 sm:min-h-[200px] sm:px-6 sm:py-10 ${
                   singleDragOver
-                    ? "scale-[1.01] border-indigo-400/65 shadow-[0_0_56px_-8px_rgba(99,102,241,0.55)] ring-2 ring-indigo-400/40"
-                    : "border-white/[0.14] hover:border-indigo-400/45 hover:bg-slate-900/55 hover:shadow-[0_0_48px_-12px_rgba(99,102,241,0.35)]"
+                    ? "scale-[1.01] border-indigo-400/70 shadow-[0_0_60px_-6px_rgba(99,102,241,0.58)] ring-2 ring-indigo-400/45"
+                    : "border-white/[0.14] hover:border-indigo-400/50 hover:bg-slate-900/55"
                 }`}
               >
+                <div
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(155deg,rgba(255,255,255,0.07)_0%,transparent_38%,rgba(99,102,241,0.06)_72%,transparent_100%)]"
+                  aria-hidden
+                />
+                <div className="fitrate-upload-scan-track" aria-hidden>
+                  <div className="fitrate-upload-scan-line" />
+                </div>
                 <input
                   id="outfit-file"
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  accept="image/*"
                   onChange={handleImageChange}
                   className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                 />
-                <span className="pointer-events-none flex flex-col items-center text-center">
+                <span className="relative z-[1] pointer-events-none flex flex-col items-center text-center">
                   <svg
                     className={`mb-3 h-14 w-14 text-indigo-400/90 sm:h-16 sm:w-16 ${singleDragOver ? "" : "fitrate-upload-icon"}`}
                     fill="none"
@@ -711,41 +779,86 @@ export default function Home() {
                       d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v10.5a2.25 2.25 0 0 0 2.25 2.25Z"
                     />
                   </svg>
-                  <span className="block text-[15px] font-semibold tracking-tight text-white">Drag &amp; drop your fit</span>
-                  <span className="mt-1.5 block text-xs text-slate-400">or click to browse</span>
-                  <span className="mt-3 block text-[11px] text-slate-500">JPG · PNG · WebP</span>
+                  <span className="block text-[15px] font-semibold tracking-tight text-white drop-shadow-[0_2px_16px_rgba(99,102,241,0.15)]">
+                    Drag &amp; drop your fit
+                  </span>
+                  <span className="mt-1.5 block text-xs font-medium text-slate-400">or click to browse</span>
+                  <span className="mt-3 block text-[11px] font-medium tracking-wide text-slate-500">
+                    JPG · PNG · WebP · iPhone photos (auto-compressed)
+                  </span>
                 </span>
               </label>
 
-              <div className="group mt-4 overflow-hidden rounded-2xl border border-white/[0.12] bg-slate-950/60 shadow-[0_20px_56px_-24px_rgba(79,70,229,0.35)] ring-1 ring-indigo-400/15 sm:mt-5">
-                {previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt="Outfit preview"
-                    className="h-52 w-full object-cover object-center transition duration-500 group-hover:scale-[1.03] sm:h-64 md:h-72"
-                  />
-                ) : (
-                  <div className="flex h-48 items-center justify-center px-4 text-center text-sm text-slate-500 sm:h-56">
-                    Preview appears here after you choose a photo.
+              <div className="fitrate-studio-ai-root mt-4 sm:mt-5">
+                <div className="fitrate-studio-ai-hover flex flex-col">
+                  <div className="fitrate-studio-ai-glow-ring group relative overflow-hidden rounded-2xl border border-white/[0.12] bg-slate-950/60 shadow-[0_20px_56px_-24px_rgba(79,70,229,0.35)] ring-1 ring-indigo-400/15">
+                    {previewUrl ? (
+                      <>
+                        <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden rounded-[inherit]" aria-hidden>
+                          {[
+                            { left: "10%", top: "14%", dur: "5.2s", del: "0s" },
+                            { left: "82%", top: "18%", dur: "5.8s", del: "0.2s" },
+                            { left: "48%", top: "38%", dur: "5.4s", del: "0.35s" },
+                            { left: "72%", top: "62%", dur: "6.1s", del: "0.5s" },
+                            { left: "18%", top: "72%", dur: "5.6s", del: "0.15s" },
+                            { left: "56%", top: "88%", dur: "5.9s", del: "0.4s" }
+                          ].map((p) => (
+                            <span
+                              key={`${p.left}-${p.top}`}
+                              className="fitrate-studio-ai-particle absolute h-0.5 w-0.5 rounded-full bg-indigo-200/45 blur-[0.5px]"
+                              style={
+                                {
+                                  left: p.left,
+                                  top: p.top,
+                                  ["--fitrate-studio-particle-dur"]: p.dur,
+                                  ["--fitrate-studio-particle-delay"]: p.del
+                                } as React.CSSProperties
+                              }
+                            />
+                          ))}
+                        </div>
+                        <img
+                          src={previewUrl}
+                          alt="Outfit preview"
+                          className="relative z-0 h-52 w-full object-cover object-center transition duration-500 group-hover:scale-[1.03] sm:h-64 md:h-72"
+                        />
+                      </>
+                    ) : (
+                      <div className="flex h-48 flex-col items-center justify-center gap-2 px-4 text-center text-sm sm:h-56">
+                        {isPreparingImage ? (
+                          <p className="text-indigo-200/90">Preparing photo…</p>
+                        ) : (
+                          <p className="text-slate-500">Preview appears here after you choose a photo.</p>
+                        )}
+                        {errorMessage && !isPreparingImage && (
+                          <p className="text-xs text-rose-300">{errorMessage}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <button
-                type="button"
-                onClick={handleAnalyzeOutfit}
-                disabled={!canAnalyze}
-                className="btn-premium mt-5 w-full rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 px-4 py-3.5 text-sm font-semibold text-white shadow-[0_12px_40px_-8px_rgba(79,70,229,0.65)] ring-1 ring-indigo-400/30 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-8px_rgba(99,102,241,0.55)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-[0.42] disabled:shadow-none disabled:ring-0 sm:mt-6"
-              >
-                {isAnalyzing ? (
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                    Analyzing with stylist AI...
-                  </span>
-                ) : (
-                  "Analyze Outfit"
-                )}
-              </button>
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeOutfit}
+                    disabled={!canAnalyze || isPreparingImage}
+                    className="btn-premium relative mt-5 w-full overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 px-4 py-3.5 text-sm font-semibold text-white shadow-[0_12px_40px_-8px_rgba(79,70,229,0.65)] ring-1 ring-indigo-400/30 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-8px_rgba(99,102,241,0.55)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-[0.42] disabled:shadow-none disabled:ring-0 sm:mt-6"
+                  >
+                    {isAnalyzing ? (
+                      <>
+                        <span className="pointer-events-none absolute inset-x-3 bottom-2 z-0 h-[3px] overflow-hidden rounded-full bg-black/25 sm:inset-x-4" aria-hidden>
+                          <span className="fitrate-studio-ai-analyze-bar block h-full w-full rounded-full bg-gradient-to-r from-white/25 via-white/50 to-cyan-200/45 shadow-[0_0_12px_rgba(255,255,255,0.25)]" />
+                        </span>
+                        <span className="relative z-[1] inline-flex items-center justify-center gap-2">
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                          Analyzing with stylist AI...
+                        </span>
+                      </>
+                    ) : (
+                      "Analyze Outfit"
+                    )}
+                  </button>
+                </div>
+              </div>
               {errorMessage && <p className="mt-3 text-sm text-rose-300">{errorMessage}</p>}
             </>
           ) : (
@@ -763,20 +876,27 @@ export default function Home() {
                     onDragLeave={() => setCompareDragA(false)}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleCompareDrop(e, "A")}
-                    className={`relative flex min-h-[124px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/35 bg-gradient-to-br from-indigo-500/[0.09] via-transparent to-cyan-500/[0.04] px-3 py-6 transition duration-300 sm:min-h-[156px] sm:py-8 ${
+                    className={`fitrate-upload-dropzone relative flex min-h-[124px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/40 bg-gradient-to-br from-indigo-500/[0.11] via-slate-950/15 to-cyan-500/[0.05] px-3 py-6 sm:min-h-[156px] sm:py-8 ${
                       compareDragA
-                        ? "scale-[1.01] border-indigo-400/65 shadow-[0_0_48px_-8px_rgba(99,102,241,0.5)] ring-2 ring-indigo-400/40"
-                        : "border-white/[0.14] hover:border-indigo-400/45 hover:bg-slate-900/45 hover:shadow-[0_0_40px_-12px_rgba(99,102,241,0.35)]"
+                        ? "scale-[1.01] border-indigo-400/70 shadow-[0_0_52px_-8px_rgba(99,102,241,0.52)] ring-2 ring-indigo-400/42"
+                        : "border-white/[0.14] hover:border-indigo-400/50 hover:bg-slate-900/48"
                     }`}
                   >
+                    <div
+                      className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(155deg,rgba(255,255,255,0.06)_0%,transparent_40%,rgba(99,102,241,0.055)_100%)]"
+                      aria-hidden
+                    />
+                    <div className="fitrate-upload-scan-track" aria-hidden>
+                      <div className="fitrate-upload-scan-line" />
+                    </div>
                     <input
                       id="compare-file-a"
                       type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      accept="image/*"
                       onChange={handleCompareImageA}
                       className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                     />
-                    <span className="pointer-events-none flex flex-col items-center text-center">
+                    <span className="relative z-[1] pointer-events-none flex flex-col items-center text-center">
                       <svg
                         className={`mb-2 h-11 w-11 text-indigo-400/90 sm:mb-3 sm:h-12 sm:w-12 ${compareDragA ? "" : "fitrate-upload-icon"}`}
                         fill="none"
@@ -791,9 +911,11 @@ export default function Home() {
                           d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v10.5a2.25 2.25 0 0 0 2.25 2.25Z"
                         />
                       </svg>
-                      <span className="block text-[13px] font-semibold tracking-tight text-white sm:text-[14px]">Drag &amp; drop your fit</span>
-                      <span className="mt-1 block text-[11px] text-slate-400 sm:text-xs">or click to browse</span>
-                      <span className="mt-2 block text-[10px] text-slate-500 sm:text-[11px]">JPG · PNG · WebP</span>
+                      <span className="block text-[13px] font-semibold tracking-tight text-white drop-shadow-[0_2px_14px_rgba(99,102,241,0.14)] sm:text-[14px]">
+                        Drag &amp; drop your fit
+                      </span>
+                      <span className="mt-1 block text-[11px] font-medium text-slate-400 sm:text-xs">or click to browse</span>
+                      <span className="mt-2 block text-[10px] font-medium tracking-wide text-slate-500 sm:text-[11px]">JPG · PNG · WebP</span>
                     </span>
                   </label>
                   <div className="group overflow-hidden rounded-2xl border border-white/[0.12] bg-slate-950/60 shadow-[0_16px_48px_-24px_rgba(79,70,229,0.3)] ring-1 ring-indigo-400/12">
@@ -822,20 +944,27 @@ export default function Home() {
                     onDragLeave={() => setCompareDragB(false)}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleCompareDrop(e, "B")}
-                    className={`relative flex min-h-[124px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/35 bg-gradient-to-br from-violet-500/[0.1] via-transparent to-indigo-500/[0.05] px-3 py-6 transition duration-300 sm:min-h-[156px] sm:py-8 ${
+                    className={`fitrate-upload-dropzone relative flex min-h-[124px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/40 bg-gradient-to-br from-violet-500/[0.12] via-slate-950/15 to-indigo-500/[0.06] px-3 py-6 sm:min-h-[156px] sm:py-8 ${
                       compareDragB
-                        ? "scale-[1.01] border-violet-400/60 shadow-[0_0_48px_-8px_rgba(139,92,246,0.48)] ring-2 ring-violet-400/38"
-                        : "border-white/[0.14] hover:border-violet-400/45 hover:bg-slate-900/45 hover:shadow-[0_0_40px_-12px_rgba(139,92,246,0.35)]"
+                        ? "scale-[1.01] border-violet-400/65 shadow-[0_0_52px_-8px_rgba(139,92,246,0.52)] ring-2 ring-violet-400/42"
+                        : "border-white/[0.14] hover:border-violet-400/52 hover:bg-slate-900/48"
                     }`}
                   >
+                    <div
+                      className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(155deg,rgba(255,255,255,0.06)_0%,transparent_40%,rgba(139,92,246,0.055)_100%)]"
+                      aria-hidden
+                    />
+                    <div className="fitrate-upload-scan-track" aria-hidden>
+                      <div className="fitrate-upload-scan-line fitrate-upload-scan-line-delay" />
+                    </div>
                     <input
                       id="compare-file-b"
                       type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      accept="image/*"
                       onChange={handleCompareImageB}
                       className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                     />
-                    <span className="pointer-events-none flex flex-col items-center text-center">
+                    <span className="relative z-[1] pointer-events-none flex flex-col items-center text-center">
                       <svg
                         className={`mb-2 h-11 w-11 text-violet-400/90 sm:mb-3 sm:h-12 sm:w-12 ${compareDragB ? "" : "fitrate-upload-icon"}`}
                         fill="none"
@@ -850,9 +979,11 @@ export default function Home() {
                           d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v10.5a2.25 2.25 0 0 0 2.25 2.25Z"
                         />
                       </svg>
-                      <span className="block text-[13px] font-semibold tracking-tight text-white sm:text-[14px]">Drag &amp; drop your fit</span>
-                      <span className="mt-1 block text-[11px] text-slate-400 sm:text-xs">or click to browse</span>
-                      <span className="mt-2 block text-[10px] text-slate-500 sm:text-[11px]">JPG · PNG · WebP</span>
+                      <span className="block text-[13px] font-semibold tracking-tight text-white drop-shadow-[0_2px_14px_rgba(139,92,246,0.16)] sm:text-[14px]">
+                        Drag &amp; drop your fit
+                      </span>
+                      <span className="mt-1 block text-[11px] font-medium text-slate-400 sm:text-xs">or click to browse</span>
+                      <span className="mt-2 block text-[10px] font-medium tracking-wide text-slate-500 sm:text-[11px]">JPG · PNG · WebP</span>
                     </span>
                   </label>
                   <div className="group overflow-hidden rounded-2xl border border-white/[0.12] bg-slate-950/60 shadow-[0_16px_48px_-24px_rgba(139,92,246,0.28)] ring-1 ring-violet-400/14">
