@@ -2,8 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5.5rem;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  @apply bg-[#030712] text-slate-100 antialiased;
+  @apply overflow-x-hidden bg-[#030712] text-slate-100 antialiased;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* --- Mesh grid + grain --- */
@@ -356,6 +363,44 @@ body {
 
 .btn-premium:active:not(:disabled) {
   transform: scale(0.98);
+}
+
+/* Mobile: touch targets, upload height, scroll-friendly hovers */
+@media (max-width: 639px) {
+  .fitrate-nav-link {
+    display: inline-flex;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    padding-inline: 0.625rem;
+    touch-action: manipulation;
+  }
+
+  .fitrate-upload-dropzone {
+    min-height: 11.5rem;
+  }
+
+  .btn-premium {
+    min-height: 3rem;
+    touch-action: manipulation;
+  }
+
+  .fitrate-mode-toggle {
+    min-height: 2.75rem;
+  }
+}
+
+@media (hover: none) {
+  .fitrate-studio-ai-hover:hover,
+  .fitrate-live-preview-hover:hover,
+  .fitrate-live-preview-hover:focus-within {
+    transform: none;
+  }
+
+  .fitrate-upload-dropzone:hover {
+    transform: none;
+  }
 }
 
 @keyframes fade-in-up {

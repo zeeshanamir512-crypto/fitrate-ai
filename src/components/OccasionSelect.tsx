@@ -241,7 +241,7 @@ export function OccasionSelect({ value, onChange, id: idProp, disabled = false }
               id={`${listboxId}-opt-${index}`}
               role="option"
               aria-selected={selected}
-              className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm outline-none transition-colors duration-150 select-none ${
+              className={`flex min-h-11 cursor-pointer touch-manipulation items-center gap-3 rounded-lg px-3 py-3 text-left text-sm outline-none transition-colors duration-150 select-none sm:min-h-0 sm:py-2.5 ${
                 active
                   ? "bg-gradient-to-r from-indigo-500/35 via-violet-500/22 to-cyan-500/18 text-white ring-1 ring-indigo-400/30"
                   : "text-slate-200 hover:bg-indigo-500/20 hover:text-white"
@@ -280,7 +280,7 @@ export function OccasionSelect({ value, onChange, id: idProp, disabled = false }
         aria-haspopup="listbox"
         aria-controls={open ? listboxId : undefined}
         aria-activedescendant={open ? activeDescendant : undefined}
-        className={`flex w-full items-center justify-between gap-3 rounded-xl border border-white/[0.12] bg-slate-950/75 px-4 py-3 text-left text-sm text-slate-100 shadow-inner shadow-black/20 ring-1 ring-indigo-400/15 backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-200 ease-out outline-none hover:border-indigo-400/40 hover:shadow-[0_0_32px_-8px_rgba(99,102,241,0.45)] hover:ring-indigo-400/35 focus-visible:border-indigo-400/50 focus-visible:shadow-[0_0_40px_-6px_rgba(99,102,241,0.55)] focus-visible:ring-2 focus-visible:ring-indigo-400/40 disabled:pointer-events-none disabled:opacity-45 ${
+        className={`flex min-h-11 w-full touch-manipulation items-center justify-between gap-3 rounded-xl border border-white/[0.12] bg-slate-950/75 px-4 py-3.5 text-left text-sm text-slate-100 shadow-inner shadow-black/20 ring-1 ring-indigo-400/15 backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-200 ease-out outline-none hover:border-indigo-400/40 hover:shadow-[0_0_32px_-8px_rgba(99,102,241,0.45)] hover:ring-indigo-400/35 focus-visible:border-indigo-400/50 focus-visible:shadow-[0_0_40px_-6px_rgba(99,102,241,0.55)] focus-visible:ring-2 focus-visible:ring-indigo-400/40 disabled:pointer-events-none disabled:opacity-45 sm:min-h-0 sm:py-3 ${
           open ? "border-indigo-400/45 shadow-[0_0_36px_-6px_rgba(99,102,241,0.5)] ring-indigo-400/35" : ""
         }`}
         onClick={() => !disabled && setOpen((o) => !o)}

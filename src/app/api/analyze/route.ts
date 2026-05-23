@@ -1,63 +1,22 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
+import { FASHION_BADGE_IDS, inferFashionBadges, sanitizeFashionBadges } from "@/lib/fashionBadges";
 import { jsonPayload } from "@/lib/jsonResponse";
+import { getOpenAiApiKey, OPENAI_API_KEY_SETUP_ERROR } from "@/lib/openaiApiKey";
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
+import type { AnalysisResult, Difficulty } from "@/types/analysis";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type OccasionMode = "Casual" | "School" | "Date" | "Gym" | "Party" | "Streetwear" | "Smart casual";
-type Difficulty = "Easy" | "Medium" | "Hard";
-
-type AnalysisResult = {
-  overallRating: number;
-  aiConfidence?: number;
-  detectedItems: {
-    outerwear: string;
-    top: string;
-    bottoms: string;
-    shoes: string;
-    accessories: string[];
-    mainColors: string[];
-    silhouette: string;
-    styleVibe: string;
-  };
-  scoreBreakdown: {
-    fit: number;
-    colorMatching: number;
-    shoes: number;
-    accessories: number;
-    occasion: number;
-    trendLevel: number;
-  };
-  scoreReasons: {
-    fit: string;
-    colorMatching: string;
-    shoes: string;
-    accessories: string;
-    occasion: string;
-    trendLevel: string;
-  };
-  styleIdentity: string;
-  mainFeedback: string;
-  colorAdvice: string;
-  bestPart: string;
-  weakestPart: string;
-  upgradeIdeas: {
-    title: string;
-    description: string;
-    difficulty: Difficulty;
-  }[];
-  dos: string[];
-  donts: string[];
-  styleKeywords: string[];
-};
 
 type AnalyzeRequestPayload = {
   imageDataUrl: string;
   occasion: OccasionMode;
+  brutalMode: boolean;
 };
 
 const outputFormatExample: AnalysisResult = {
@@ -118,7 +77,8 @@ const outputFormatExample: AnalysisResult = {
     "Avoid sneakers that look too bulky compared to how your pants hang",
     "Avoid overly bulky top layers with zero structure around the neckline or waist"
   ],
-  styleKeywords: ["smart casual", "minimal", "clean", "balanced"]
+  styleKeywords: ["smart casual", "minimal", "clean", "balanced"],
+  fashionBadges: ["Clean Minimalist", "Streetwear King"]
 };
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // keep requests small and fast
@@ -369,8 +329,19 @@ function sanitizeResult(data: Partial<AnalysisResult>, selectedOccasion: Occasio
         : outputFormatExample.upgradeIdeas,
     dos: Array.isArray(data.dos) ? data.dos.slice(0, 5).map(String) : outputFormatExample.dos,
     donts: Array.isArray(data.donts) ? data.donts.slice(0, 5).map(String) : outputFormatExample.donts,
-    styleKeywords: Array.isArray(data.styleKeywords) ? data.styleKeywords.slice(0, 8).map(String) : ["clean"]
+    styleKeywords: Array.isArray(data.styleKeywords) ? data.styleKeywords.slice(0, 8).map(String) : ["clean"],
+    fashionBadges: []
   };
+
+  let badges = sanitizeFashionBadges(data.fashionBadges);
+  if (badges.length === 0) {
+    badges = inferFashionBadges({
+      styleKeywords: sanitized.styleKeywords,
+      detectedItems: { styleVibe: sanitized.detectedItems.styleVibe },
+      scoreBreakdown: { trendLevel: sanitized.scoreBreakdown.trendLevel, fit: sanitized.scoreBreakdown.fit }
+    });
+  }
+  sanitized.fashionBadges = badges;
 
   // Make upgrades/don'ts more outfit-aware and less generic.
   const itemText = [
@@ -691,6 +662,7 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
       const file = formData.get("file");
       const occasionRaw = String(formData.get("occasion") ?? "Casual");
       const occasion = OCCASIONS.includes(occasionRaw as OccasionMode) ? (occasionRaw as OccasionMode) : "Casual";
+      const brutalMode = formData.get("brutalMode") === "1" || formData.get("brutalMode") === "true";
       if (!(file instanceof Blob)) {
         return jsonPayload({ error: "Missing image file (expected field name: file)." }, 400);
       }
@@ -705,7 +677,8 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
       const base64 = Buffer.from(bytes).toString("base64");
       return {
         imageDataUrl: `data:${mime};base64,${base64}`,
-        occasion
+        occasion,
+        brutalMode
       };
     } catch (err) {
       console.error("Analyze multipart parse error:", err);
@@ -717,9 +690,14 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
   }
 
   try {
-    const body = (await request.json()) as { imageDataUrl?: string; occasion?: OccasionMode };
+    const body = (await request.json()) as {
+      imageDataUrl?: string;
+      occasion?: OccasionMode;
+      brutalMode?: boolean;
+    };
     const imageDataUrl = body?.imageDataUrl;
     const occasion = OCCASIONS.includes(body.occasion as OccasionMode) ? (body.occasion as OccasionMode) : "Casual";
+    const brutalMode = Boolean(body?.brutalMode);
     if (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/")) {
       return jsonPayload({ error: "Invalid image format. Use multipart upload or a data:image/… URL." }, 400);
     }
@@ -728,7 +706,8 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
     }
     return {
       imageDataUrl,
-      occasion
+      occasion,
+      brutalMode
     };
   } catch {
     return jsonPayload({ error: "Invalid JSON body." }, 400);
@@ -737,26 +716,16 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY?.trim();
-    const placeholder =
-      !apiKey ||
-      apiKey === "your_openai_api_key_here" ||
-      /^your[_\s-]*openai[_\s-]*api[_\s-]*key/i.test(apiKey);
-    if (placeholder) {
-      return jsonPayload(
-        {
-          error:
-            "Missing or placeholder OPENAI_API_KEY. Add a real key to .env.local (see .env.example), save, and restart npm run dev."
-        },
-        500
-      );
+    const apiKey = getOpenAiApiKey();
+    if (!apiKey) {
+      return jsonPayload({ error: OPENAI_API_KEY_SETUP_ERROR }, 500);
     }
 
     const payloadOrError = await getImageDataUrl(request);
     if (payloadOrError instanceof NextResponse) {
       return payloadOrError;
     }
-    const { imageDataUrl, occasion } = payloadOrError;
+    const { imageDataUrl, occasion, brutalMode } = payloadOrError;
 
     const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o-mini";
     const client = new OpenAI({
@@ -815,7 +784,19 @@ Rules:
 - dos: 3 to 5 short bullet-style strings
 - donts: 3 to 5 short bullet-style strings
 - donts must reference actual visible pieces/problems and stay action-specific (avoid contradicting cohesive casual/street setups). Good patterns: avoiding extra unrelated accessories atop an already-balanced stack, chunky sneakers overpowering trousers, unstructured bulky tops.
-- styleKeywords: 4 to 7 tags`;
+- styleKeywords: 4 to 7 tags
+- fashionBadges: 1 to 3 strings chosen ONLY from this exact list (no other names): ${JSON.stringify([...FASHION_BADGE_IDS])}`;
+
+    const brutalModeAddendum = brutalMode
+      ? `
+
+BRUTAL AI MODE (playful savage stylist — NOT toxic):
+- Be honest, funny, slightly savage, and meme-worthy while staying respectful.
+- No insults about body, weight, face, ethnicity, gender, or cruelty. No slurs.
+- Use witty one-liners in mainFeedback, bestPart, weakestPart, and scoreReasons when natural.
+- Examples of tone: "The fit is clean but the sneakers are fighting for attention." / "Main character jacket with NPC pants." / "This fit almost unlocked fashion enlightenment."
+- Still give useful styling advice — roast the outfit, not the person.`
+      : "";
 
     const streetwearScoringAddendum = occasion === "Streetwear"
       ? `
@@ -845,7 +826,7 @@ Streetwear accessory & pants notes:
         {
           role: "user",
           content: [
-            { type: "text", text: `${prompt}${streetwearScoringAddendum}` },
+            { type: "text", text: `${prompt}${brutalModeAddendum}${streetwearScoringAddendum}` },
             {
               type: "image_url",
               image_url: { url: imageDataUrl, detail: "low" }

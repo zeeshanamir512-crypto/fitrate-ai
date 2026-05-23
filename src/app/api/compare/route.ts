@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
 import { jsonPayload } from "@/lib/jsonResponse";
+import { getOpenAiApiKey, OPENAI_API_KEY_SETUP_ERROR } from "@/lib/openaiApiKey";
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
 
 export const maxDuration = 120;
@@ -228,19 +229,9 @@ async function blobsToPayload(request: Request): Promise<
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY?.trim();
-    const placeholder =
-      !apiKey ||
-      apiKey === "your_openai_api_key_here" ||
-      /^your[_\s-]*openai[_\s-]*api[_\s-]*key/i.test(apiKey);
-    if (placeholder) {
-      return jsonPayload(
-        {
-          error:
-            "Missing or placeholder OPENAI_API_KEY. Add a real key to .env.local (see .env.example), save, and restart npm run dev."
-        },
-        500
-      );
+    const apiKey = getOpenAiApiKey();
+    if (!apiKey) {
+      return jsonPayload({ error: OPENAI_API_KEY_SETUP_ERROR }, 500);
     }
 
     const payload = await blobsToPayload(request);

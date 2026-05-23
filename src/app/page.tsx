@@ -3,11 +3,18 @@
 import { toPng } from "html-to-image";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { AnalyzingOverlay } from "@/components/AnalyzingOverlay";
+import { AnimatedScoreBars } from "@/components/AnimatedScoreBars";
+import { AnimatedScoreReveal } from "@/components/AnimatedScoreReveal";
+import { BrutalModeToggle } from "@/components/BrutalModeToggle";
+import { FashionBadges } from "@/components/FashionBadges";
 import { LiveAnalysisPreview } from "@/components/LiveAnalysisPreview";
 import { OccasionSelect, type OccasionMode } from "@/components/OccasionSelect";
+import { ShareableResultCard } from "@/components/ShareableResultCard";
+import { inferFashionBadges, sanitizeFashionBadges, type FashionBadgeId } from "@/lib/fashionBadges";
 import { prepareImageFile, readFileAsDataUrl, retainFile } from "@/lib/prepareImageFile";
 import { readApiJson } from "@/lib/readApiJson";
-type Difficulty = "Easy" | "Medium" | "Hard";
+import type { AnalysisResult, Difficulty } from "@/types/analysis";
 type AppMode = "single" | "compare";
 
 type CompareOutfitsResult = {
@@ -21,47 +28,8 @@ type CompareOutfitsResult = {
   weakerOutfitTips: string[];
 };
 
-type AnalysisResult = {
-  overallRating: number;
-  aiConfidence?: number;
-  detectedItems: {
-    outerwear: string;
-    top: string;
-    bottoms: string;
-    shoes: string;
-    accessories: string[];
-    mainColors: string[];
-    silhouette: string;
-    styleVibe: string;
-  };
-  scoreBreakdown: {
-    fit: number;
-    colorMatching: number;
-    shoes: number;
-    accessories: number;
-    occasion: number;
-    trendLevel: number;
-  };
-  scoreReasons: {
-    fit: string;
-    colorMatching: string;
-    shoes: string;
-    accessories: string;
-    occasion: string;
-    trendLevel: string;
-  };
-  styleIdentity: string;
-  mainFeedback: string;
-  colorAdvice: string;
-  bestPart: string;
-  weakestPart: string;
-  upgradeIdeas: { title: string; description: string; difficulty: Difficulty }[];
-  dos: string[];
-  donts: string[];
-  styleKeywords: string[];
-};
-
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
+const BRUTAL_MODE_STORAGE_KEY = "fitrate-brutal-mode";
 
 const ATMOS_SPARKS = [
   { t: "9%", l: "11%", dur: "12s", del: "0s" },
@@ -108,45 +76,6 @@ function buildImproveTip(tips: string[], maxChars: number): string {
   return shortenCompareText(first, maxChars);
 }
 
-function OverallScoreRing({ rating, gradientId }: { rating: number; gradientId: string }) {
-  const r = 40;
-  const c = 2 * Math.PI * r;
-  const pct = Math.min(10, Math.max(0, rating)) / 10;
-  return (
-    <svg width={112} height={112} viewBox="0 0 112 112" className="shrink-0 -rotate-90 drop-shadow-[0_0_20px_rgba(99,102,241,0.45)]" aria-hidden>
-      <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#818cf8" />
-          <stop offset="55%" stopColor="#a78bfa" />
-          <stop offset="100%" stopColor="#22d3ee" />
-        </linearGradient>
-      </defs>
-      <circle cx="56" cy="56" r={r} fill="none" className="stroke-slate-900/95" strokeWidth="7" />
-      <circle
-        cx="56"
-        cy="56"
-        r={r}
-        fill="none"
-        stroke={`url(#${gradientId})`}
-        strokeWidth="7"
-        strokeLinecap="round"
-        strokeDasharray={c}
-        strokeDashoffset={c * (1 - pct)}
-        className="transition-[stroke-dashoffset] duration-1000 ease-out"
-      />
-    </svg>
-  );
-}
-
-const scoreItems: { key: keyof AnalysisResult["scoreBreakdown"]; label: string }[] = [
-  { key: "fit", label: "Fit / Silhouette" },
-  { key: "colorMatching", label: "Color Matching" },
-  { key: "shoes", label: "Shoes Match" },
-  { key: "accessories", label: "Accessories" },
-  { key: "occasion", label: "Occasion Match" },
-  { key: "trendLevel", label: "Trend / Style Level" }
-];
-
 export default function Home() {
   const [appMode, setAppMode] = useState<AppMode>("single");
   const [occasionMode, setOccasionMode] = useState<OccasionMode>("Casual");
@@ -165,7 +94,8 @@ export default function Home() {
   const [compareResult, setCompareResult] = useState<CompareOutfitsResult | null>(null);
   const [compareError, setCompareError] = useState<string | null>(null);
 
-  const [shareCardPreviewVisible, setShareCardPreviewVisible] = useState(false);
+  const [brutalMode, setBrutalMode] = useState(false);
+  const [resultRevealKey, setResultRevealKey] = useState(0);
   const [shareCardExportLoading, setShareCardExportLoading] = useState(false);
   const [shareCardExportError, setShareCardExportError] = useState<string | null>(null);
 
@@ -188,6 +118,12 @@ export default function Home() {
   const canAnalyze = useMemo(() => Boolean(selectedFile) && !isAnalyzing, [selectedFile, isAnalyzing]);
   const canCompare = useMemo(() => Boolean(fileA && fileB) && !isComparing, [fileA, fileB, isComparing]);
 
+  const displayBadges = useMemo((): FashionBadgeId[] => {
+    if (!result) return [];
+    const fromApi = sanitizeFashionBadges(result.fashionBadges);
+    return fromApi.length > 0 ? fromApi : inferFashionBadges(result);
+  }, [result]);
+
   useEffect(() => {
     return () => {
       if (previewBlobRef.current) URL.revokeObjectURL(previewBlobRef.current);
@@ -197,7 +133,17 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    setShareCardPreviewVisible(false);
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(BRUTAL_MODE_STORAGE_KEY);
+    if (stored === "1") setBrutalMode(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(BRUTAL_MODE_STORAGE_KEY, brutalMode ? "1" : "0");
+  }, [brutalMode]);
+
+  useEffect(() => {
     setShareCardExportError(null);
     setShareCardExportLoading(false);
   }, [result]);
@@ -223,7 +169,6 @@ export default function Home() {
 
     if (next === "compare") {
       setResult(null);
-      setShareCardPreviewVisible(false);
       setShareCardExportError(null);
       setCompareShareCardPreviewVisible(false);
       setCompareShareCardExportError(null);
@@ -388,6 +333,7 @@ export default function Home() {
       const formData = new FormData();
       formData.set("file", selectedFile);
       formData.set("occasion", occasionMode);
+      formData.set("brutalMode", brutalMode ? "1" : "0");
 
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -413,6 +359,7 @@ export default function Home() {
       }
 
       setResult(data.result);
+      setResultRevealKey((k) => k + 1);
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === "AbortError") {
         setErrorMessage("Analysis timed out. Try a smaller image or retry in a moment.");
@@ -526,7 +473,7 @@ export default function Home() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-[#030712] px-4 pb-16 pt-4 sm:px-6 sm:pb-24 sm:pt-6">
+    <main className="relative min-h-screen overflow-x-hidden bg-[#030712] px-4 pb-[max(4rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 sm:pb-24 sm:pt-6">
       <div
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_110%_78%_at_50%_-16%,rgba(99,102,241,0.34),transparent_58%),radial-gradient(ellipse_56%_46%_at_100%_2%,rgba(139,92,246,0.24),transparent_52%),radial-gradient(ellipse_52%_42%_at_0%_94%,rgba(34,211,238,0.18),transparent_50%),radial-gradient(ellipse_40%_36%_at_72%_72%,rgba(167,139,250,0.08),transparent_55%)]"
         aria-hidden
@@ -565,19 +512,22 @@ export default function Home() {
         ))}
       </div>
 
-      <nav className="sticky top-3 z-[70] mx-auto mb-6 flex max-w-6xl justify-center px-1 sm:top-4">
-        <div className="flex w-full max-w-5xl items-center justify-between gap-3 rounded-2xl border border-white/[0.1] bg-slate-950/70 px-3 py-2.5 shadow-[0_20px_60px_-18px_rgba(79,70,229,0.45)] backdrop-blur-2xl ring-1 ring-indigo-400/20 sm:rounded-full sm:px-5 sm:py-2">
-          <a href="#" className="bg-gradient-to-r from-white via-indigo-100 to-violet-300 bg-clip-text text-sm font-bold tracking-tight text-transparent sm:text-base">
+      <nav className="sticky top-0 z-[70] mx-auto mb-5 flex max-w-6xl justify-center px-1 sm:top-4 sm:mb-6">
+        <div className="flex w-full min-w-0 max-w-5xl items-center justify-between gap-2 rounded-2xl border border-white/[0.1] bg-slate-950/70 px-2.5 py-2 shadow-[0_20px_60px_-18px_rgba(79,70,229,0.45)] backdrop-blur-2xl ring-1 ring-indigo-400/20 sm:gap-3 sm:rounded-full sm:px-5 sm:py-2">
+          <a
+            href="#"
+            className="shrink-0 bg-gradient-to-r from-white via-indigo-100 to-violet-300 bg-clip-text text-sm font-bold tracking-tight text-transparent sm:text-base"
+          >
             FitRate AI
           </a>
-          <div className="flex flex-wrap items-center justify-end gap-1 text-[10px] font-medium text-slate-400 sm:gap-4 sm:text-xs">
-            <a href="#features" className="rounded-full px-2 py-1 transition hover:bg-white/[0.06] hover:text-white">
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-0.5 overflow-x-auto text-[11px] font-medium text-slate-400 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] sm:gap-4 sm:overflow-visible sm:text-xs [&::-webkit-scrollbar]:hidden">
+            <a href="#features" className="fitrate-nav-link shrink-0 rounded-full transition hover:bg-white/[0.06] hover:text-white">
               Features
             </a>
-            <a href="#app-panel" className="rounded-full px-2 py-1 transition hover:bg-white/[0.06] hover:text-white">
+            <a href="#app-panel" className="fitrate-nav-link shrink-0 rounded-full transition hover:bg-white/[0.06] hover:text-white">
               Studio
             </a>
-            <a href="#compare-results" className="rounded-full px-2 py-1 transition hover:bg-white/[0.06] hover:text-white">
+            <a href="#compare-results" className="fitrate-nav-link shrink-0 rounded-full transition hover:bg-white/[0.06] hover:text-white">
               Compare
             </a>
             <a
@@ -603,7 +553,7 @@ export default function Home() {
               <span className="fitrate-hero-dot absolute left-[46%] top-[28%] h-1 w-1 rounded-full bg-cyan-200/70 blur-[1px]" style={{ animationDelay: "1.6s" }} />
               <span className="fitrate-hero-dot absolute left-[12%] top-[78%] h-[3px] w-[3px] rounded-full bg-violet-200/70 blur-[1px]" style={{ animationDelay: "2s" }} />
             </div>
-            <p className="relative mx-auto mb-3 max-w-xl text-[10px] font-semibold uppercase tracking-[0.32em] text-indigo-400/80 sm:text-[11px] lg:mx-0">
+            <p className="relative mx-auto mb-3 max-w-xl text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-400/80 sm:text-[11px] sm:tracking-[0.32em] lg:mx-0">
               Neural style engine
             </p>
             <div className="relative mx-auto inline-block lg:mx-0">
@@ -611,12 +561,12 @@ export default function Home() {
                 className="fitrate-hero-title-glow pointer-events-none absolute -inset-16 rounded-full bg-gradient-to-r from-indigo-600/48 via-violet-500/38 to-cyan-400/28 blur-3xl"
                 aria-hidden
               />
-              <h1 className="fitrate-hero-headline relative text-5xl font-bold tracking-[-0.045em] sm:text-6xl md:text-7xl md:tracking-[-0.05em]">
+              <h1 className="fitrate-hero-headline relative break-words text-[clamp(2.25rem,10vw,3rem)] font-bold tracking-[-0.04em] sm:text-6xl sm:tracking-[-0.045em] md:text-7xl md:tracking-[-0.05em]">
                 <span className="bg-gradient-to-br from-white via-indigo-50 to-slate-400 bg-clip-text text-transparent">FitRate </span>
                 <span className="fitrate-title-shine bg-gradient-to-br from-indigo-200 via-white to-cyan-200 bg-clip-text text-transparent">AI</span>
               </h1>
             </div>
-            <p className="relative mx-auto mt-5 max-w-xl text-[15px] font-medium leading-relaxed text-slate-300 sm:text-lg lg:mx-0">
+            <p className="relative mx-auto mt-5 max-w-xl text-balance text-[15px] font-medium leading-relaxed text-slate-300 sm:text-lg lg:mx-0">
               Upload your outfit. Get rated by AI. Improve your style instantly.
             </p>
             <p className="relative mx-auto mt-3 max-w-lg text-sm leading-relaxed text-slate-500 lg:mx-0">
@@ -657,12 +607,12 @@ export default function Home() {
             </div>
           </header>
 
-          <aside className="animate-fade-in mx-auto mt-8 w-full max-w-[300px] lg:mx-0 lg:mt-0">
+          <aside className="animate-fade-in mx-auto mt-8 w-full min-w-0 max-w-full sm:max-w-[300px] lg:mx-0 lg:mt-0">
             <LiveAnalysisPreview />
           </aside>
         </div>
 
-        <div id="features" className="mb-8 grid scroll-mt-28 gap-3 sm:mb-10 sm:grid-cols-3 sm:gap-4">
+        <div id="features" className="mb-8 grid w-full min-w-0 scroll-mt-28 gap-3 sm:mb-10 sm:grid-cols-3 sm:gap-4">
           <div className="group relative rounded-2xl p-px shadow-lg shadow-indigo-950/30 transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_60px_-20px_rgba(99,102,241,0.45)]">
             <div className="h-full rounded-2xl border border-white/[0.06] bg-slate-900/60 p-4 ring-1 ring-white/[0.05] backdrop-blur-xl transition group-hover:border-indigo-400/40 sm:p-5">
               <span className="text-2xl leading-none" aria-hidden>
@@ -696,7 +646,7 @@ export default function Home() {
           id="app-panel"
           className="rounded-[1.35rem] bg-gradient-to-br from-indigo-500/48 via-violet-500/30 to-cyan-500/20 p-px shadow-[0_44px_128px_-34px_rgba(79,70,229,0.62),0_0_80px_-40px_rgba(34,211,238,0.14)] ring-1 ring-white/[0.1]"
         >
-          <div className="relative overflow-hidden rounded-[1.3rem] border border-white/[0.1] bg-slate-900/70 p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),inset_0_-1px_0_0_rgba(99,102,241,0.07)] backdrop-blur-3xl sm:p-8">
+          <div className="relative w-full min-w-0 overflow-hidden rounded-[1.3rem] border border-white/[0.1] bg-slate-900/70 p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),inset_0_-1px_0_0_rgba(99,102,241,0.07)] backdrop-blur-3xl sm:p-8">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_85%_62%_at_18%_-4%,rgba(99,102,241,0.14),transparent),radial-gradient(ellipse_65%_52%_at_100%_102%,rgba(34,211,238,0.1),transparent),radial-gradient(ellipse_45%_38%_at_50%_108%,rgba(167,139,250,0.06),transparent)]" aria-hidden />
             <div className="relative">
           <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.26em] text-slate-400">Mode</p>
@@ -710,7 +660,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => switchAppMode("single")}
-              className={`relative z-10 rounded-xl px-3 py-2.5 text-center text-xs font-semibold transition-colors duration-200 sm:py-3 sm:text-sm ${
+              className={`fitrate-mode-toggle relative z-10 rounded-xl px-3 py-3 text-center text-xs font-semibold transition-colors duration-200 sm:py-3 sm:text-sm ${
                 appMode === "single" ? "text-white" : "text-slate-400 hover:text-slate-100"
               }`}
             >
@@ -719,7 +669,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => switchAppMode("compare")}
-              className={`relative z-10 rounded-xl px-3 py-2.5 text-center text-xs font-semibold transition-colors duration-200 sm:py-3 sm:text-sm ${
+              className={`fitrate-mode-toggle relative z-10 rounded-xl px-3 py-3 text-center text-xs font-semibold transition-colors duration-200 sm:py-3 sm:text-sm ${
                 appMode === "compare" ? "text-white" : "text-slate-400 hover:text-slate-100"
               }`}
             >
@@ -731,6 +681,8 @@ export default function Home() {
             Occasion mode
           </label>
           <OccasionSelect id="occasion" value={occasionMode} onChange={setOccasionMode} />
+
+          {appMode === "single" && <BrutalModeToggle enabled={brutalMode} onChange={setBrutalMode} />}
 
           {appMode === "single" ? (
             <>
@@ -744,7 +696,7 @@ export default function Home() {
                   e.preventDefault();
                 }}
                 onDrop={handleSingleDrop}
-                className={`fitrate-upload-dropzone relative flex min-h-[168px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/40 bg-gradient-to-br from-indigo-500/[0.1] via-slate-950/20 to-cyan-500/[0.07] px-5 py-9 sm:min-h-[200px] sm:px-6 sm:py-10 ${
+                className={`fitrate-upload-dropzone relative flex min-h-[11.5rem] cursor-pointer touch-manipulation flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/40 bg-gradient-to-br from-indigo-500/[0.1] via-slate-950/20 to-cyan-500/[0.07] px-4 py-8 sm:min-h-[200px] sm:px-6 sm:py-10 ${
                   singleDragOver
                     ? "scale-[1.01] border-indigo-400/70 shadow-[0_0_60px_-6px_rgba(99,102,241,0.58)] ring-2 ring-indigo-400/45"
                     : "border-white/[0.14] hover:border-indigo-400/50 hover:bg-slate-900/55"
@@ -779,11 +731,11 @@ export default function Home() {
                       d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v10.5a2.25 2.25 0 0 0 2.25 2.25Z"
                     />
                   </svg>
-                  <span className="block text-[15px] font-semibold tracking-tight text-white drop-shadow-[0_2px_16px_rgba(99,102,241,0.15)]">
+                  <span className="block max-w-[16rem] text-[15px] font-semibold leading-snug tracking-tight text-white drop-shadow-[0_2px_16px_rgba(99,102,241,0.15)] sm:max-w-none">
                     Drag &amp; drop your fit
                   </span>
-                  <span className="mt-1.5 block text-xs font-medium text-slate-400">or click to browse</span>
-                  <span className="mt-3 block text-[11px] font-medium tracking-wide text-slate-500">
+                  <span className="mt-1.5 block text-xs font-medium text-slate-400">or tap to browse</span>
+                  <span className="mt-3 block max-w-[18rem] text-balance text-[11px] font-medium leading-snug tracking-wide text-slate-500 sm:max-w-none">
                     JPG · PNG · WebP · iPhone photos (auto-compressed)
                   </span>
                 </span>
@@ -841,7 +793,7 @@ export default function Home() {
                     type="button"
                     onClick={handleAnalyzeOutfit}
                     disabled={!canAnalyze || isPreparingImage}
-                    className="btn-premium relative mt-5 w-full overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 px-4 py-3.5 text-sm font-semibold text-white shadow-[0_12px_40px_-8px_rgba(79,70,229,0.65)] ring-1 ring-indigo-400/30 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-8px_rgba(99,102,241,0.55)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-[0.42] disabled:shadow-none disabled:ring-0 sm:mt-6"
+                    className="btn-premium relative mt-5 w-full touch-manipulation overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 px-4 py-4 text-sm font-semibold text-white shadow-[0_12px_40px_-8px_rgba(79,70,229,0.65)] ring-1 ring-indigo-400/30 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-8px_rgba(99,102,241,0.55)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-[0.42] disabled:shadow-none disabled:ring-0 sm:mt-6 sm:py-3.5"
                   >
                     {isAnalyzing ? (
                       <>
@@ -859,6 +811,7 @@ export default function Home() {
                   </button>
                 </div>
               </div>
+              <AnalyzingOverlay visible={isAnalyzing} brutalMode={brutalMode} />
               {errorMessage && <p className="mt-3 text-sm text-rose-300">{errorMessage}</p>}
             </>
           ) : (
@@ -876,7 +829,7 @@ export default function Home() {
                     onDragLeave={() => setCompareDragA(false)}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleCompareDrop(e, "A")}
-                    className={`fitrate-upload-dropzone relative flex min-h-[124px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/40 bg-gradient-to-br from-indigo-500/[0.11] via-slate-950/15 to-cyan-500/[0.05] px-3 py-6 sm:min-h-[156px] sm:py-8 ${
+                    className={`fitrate-upload-dropzone relative flex min-h-[8.75rem] cursor-pointer touch-manipulation flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/40 bg-gradient-to-br from-indigo-500/[0.11] via-slate-950/15 to-cyan-500/[0.05] px-3 py-6 sm:min-h-[156px] sm:py-8 ${
                       compareDragA
                         ? "scale-[1.01] border-indigo-400/70 shadow-[0_0_52px_-8px_rgba(99,102,241,0.52)] ring-2 ring-indigo-400/42"
                         : "border-white/[0.14] hover:border-indigo-400/50 hover:bg-slate-900/48"
@@ -944,7 +897,7 @@ export default function Home() {
                     onDragLeave={() => setCompareDragB(false)}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleCompareDrop(e, "B")}
-                    className={`fitrate-upload-dropzone relative flex min-h-[124px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/40 bg-gradient-to-br from-violet-500/[0.12] via-slate-950/15 to-indigo-500/[0.06] px-3 py-6 sm:min-h-[156px] sm:py-8 ${
+                    className={`fitrate-upload-dropzone relative flex min-h-[8.75rem] cursor-pointer touch-manipulation flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed bg-slate-950/40 bg-gradient-to-br from-violet-500/[0.12] via-slate-950/15 to-indigo-500/[0.06] px-3 py-6 sm:min-h-[156px] sm:py-8 ${
                       compareDragB
                         ? "scale-[1.01] border-violet-400/65 shadow-[0_0_52px_-8px_rgba(139,92,246,0.52)] ring-2 ring-violet-400/42"
                         : "border-white/[0.14] hover:border-violet-400/52 hover:bg-slate-900/48"
@@ -1006,7 +959,7 @@ export default function Home() {
                 type="button"
                 onClick={handleCompareOutfits}
                 disabled={!canCompare}
-                className="btn-premium mt-6 w-full rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-indigo-500 px-4 py-3.5 text-sm font-semibold text-white shadow-[0_12px_40px_-8px_rgba(109,40,217,0.55)] ring-1 ring-violet-400/25 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-8px_rgba(139,92,246,0.5)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-[0.42] disabled:shadow-none disabled:ring-0 sm:mt-7"
+                className="btn-premium mt-6 w-full touch-manipulation rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-indigo-500 px-4 py-4 text-sm font-semibold text-white shadow-[0_12px_40px_-8px_rgba(109,40,217,0.55)] ring-1 ring-violet-400/25 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-8px_rgba(139,92,246,0.5)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-[0.42] disabled:shadow-none disabled:ring-0 sm:mt-7 sm:py-3.5"
               >
                 {isComparing ? (
                   <span className="inline-flex items-center justify-center gap-2">
@@ -1027,49 +980,24 @@ export default function Home() {
 
       {result && appMode === "single" && (
         <section className="animate-slide-up mx-auto mt-12 w-full max-w-6xl space-y-8">
-          <div className="rounded-3xl border border-white/[0.1] bg-slate-900/55 p-6 shadow-[0_28px_90px_-28px_rgba(79,70,229,0.35)] ring-1 ring-indigo-400/15 backdrop-blur-xl sm:p-9">
+          <div className="w-full min-w-0 rounded-3xl border border-white/[0.1] bg-slate-900/55 p-4 shadow-[0_28px_90px_-28px_rgba(79,70,229,0.35)] ring-1 ring-indigo-400/15 backdrop-blur-xl sm:p-9">
             <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0 flex-1">
                 <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl md:text-4xl md:tracking-tight">
-                  Your Stylist Analysis
+                  {brutalMode ? "Brutal Stylist Verdict" : "Your Stylist Analysis"}
                 </h2>
                 <p className="mt-2 text-sm text-slate-400">
                   Judged for{" "}
                   <span className="font-semibold text-indigo-300">{occasionMode}</span>
+                  {brutalMode && (
+                    <span className="ml-2 rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                      Brutal mode
+                    </span>
+                  )}
                 </p>
-                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                  <button
-                    type="button"
-                    onClick={() => setShareCardPreviewVisible(true)}
-                    className="w-full rounded-xl border border-indigo-400/40 bg-gradient-to-r from-indigo-500/15 to-violet-500/10 px-5 py-2.5 text-sm font-semibold text-indigo-50 shadow-[0_8px_32px_-12px_rgba(99,102,241,0.45)] ring-1 ring-indigo-400/25 transition duration-300 hover:-translate-y-0.5 hover:border-indigo-300/60 hover:shadow-[0_14px_40px_-10px_rgba(99,102,241,0.55)] sm:w-auto"
-                  >
-                    Create Share Card
-                  </button>
-                </div>
-                <p className="mt-3 max-w-md text-xs leading-relaxed text-slate-500">
-                  Your uploaded photo is not included in the share card unless you choose to add it later.
-                </p>
+                <FashionBadges badges={displayBadges} animateKey={resultRevealKey} />
               </div>
-              <div className="relative w-full shrink-0 overflow-hidden rounded-2xl border border-indigo-400/40 bg-gradient-to-br from-indigo-500/40 via-indigo-600/25 to-violet-700/30 px-6 py-6 shadow-[0_0_72px_-8px_rgba(99,102,241,0.75)] ring-1 ring-indigo-300/35 sm:w-auto sm:min-w-[260px] sm:px-8 sm:py-7">
-                <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-cyan-400/20 blur-3xl" aria-hidden />
-                <div className="pointer-events-none absolute -bottom-6 -left-6 h-24 w-24 rounded-full bg-violet-500/25 blur-2xl" aria-hidden />
-                <p className="text-center text-[10px] font-semibold uppercase tracking-[0.26em] text-indigo-100/95">Overall Outfit</p>
-                <div className="relative mt-4 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-                  <OverallScoreRing rating={result.overallRating} gradientId={scoreRingGradientId} />
-                  <div className="text-center sm:text-left">
-                    <p className="text-6xl font-bold tabular-nums tracking-tight text-white drop-shadow-[0_0_28px_rgba(99,102,241,0.45)] sm:text-7xl">
-                      {result.overallRating}
-                      <span className="text-3xl font-semibold text-indigo-200/90">/10</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="relative mx-auto mt-5 h-2.5 w-full max-w-[220px] overflow-hidden rounded-full bg-slate-950/85 ring-1 ring-white/[0.1]">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-violet-500 to-cyan-400 shadow-[0_0_18px_rgba(99,102,241,0.85)] transition-[width] duration-700 ease-out"
-                    style={{ width: `${Math.min(100, Math.max(6, result.overallRating * 10))}%` }}
-                  />
-                </div>
-              </div>
+              <AnimatedScoreReveal rating={result.overallRating} gradientId={scoreRingGradientId} animateKey={resultRevealKey} />
             </div>
 
             {typeof result.aiConfidence === "number" && (
@@ -1079,94 +1007,22 @@ export default function Home() {
               </p>
             )}
 
-            {shareCardPreviewVisible && (
-              <div className="mt-6 space-y-3">
-                <div
-                  ref={shareCardRef}
-                  className="mx-auto box-border w-full max-w-[420px] rounded-[1.75rem] border border-white/[0.12] bg-[#020617] p-8 shadow-[0_36px_90px_-20px_rgba(79,70,229,0.55)] ring-1 ring-indigo-400/25"
-                >
-                  <div className="border-b border-white/[0.1] pb-6 text-center">
-                    <p className="text-xl font-bold tracking-tight text-white">FitRate AI</p>
-                    <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-indigo-200/90">AI Outfit Rating</p>
-                  </div>
-                  <div className="py-7 text-center">
-                    <p className="text-[4.5rem] font-extrabold leading-none tracking-tight text-white tabular-nums drop-shadow-[0_0_40px_rgba(99,102,241,0.35)]">
-                      {result.overallRating}/10
-                    </p>
-                    <p className="mt-4 text-sm text-slate-300">
-                      Judged for: <span className="font-semibold text-indigo-200">{occasionMode}</span>
-                    </p>
-                    {typeof result.aiConfidence === "number" && (
-                      <p className="mt-1 text-xs text-slate-400">
-                        AI confidence: <span className="font-semibold text-slate-200">{Math.round(result.aiConfidence)}%</span>
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-4 border-t border-white/10 pt-5 text-left">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Style vibe</p>
-                      <p className="mt-1 text-sm leading-snug text-slate-100">
-                        {shortenShareText(result.detectedItems.styleVibe || result.styleIdentity, 72)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-500/90">Best</p>
-                      <p className="mt-1 text-sm leading-snug text-emerald-100/95">&ldquo;{shortenShareText(result.bestPart, 140)}&rdquo;</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-400/95">Improve</p>
-                      <p className="mt-1 text-sm leading-snug text-rose-100/95">&ldquo;{shortenShareText(result.weakestPart, 140)}&rdquo;</p>
-                    </div>
-                  </div>
-                  <div className="mt-5 flex min-h-[1.75rem] flex-wrap justify-center gap-2 border-t border-white/10 pt-5">
-                    {result.styleKeywords.length === 0 ? (
-                      <span className="text-[11px] text-slate-500">—</span>
-                    ) : (
-                      result.styleKeywords.slice(0, 3).map((kw) => (
-                        <span
-                          key={`share-kw-${kw}`}
-                          className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-indigo-100"
-                        >
-                          {kw}
-                        </span>
-                      ))
-                    )}
-                  </div>
-                  <p className="mt-5 text-center text-[11px] leading-relaxed text-slate-400">
-                    {buildDetectedOutfitSummary(result)}
-                  </p>
-                  <p className="mt-4 text-center text-[10px] text-slate-500">Generated with FitRate AI</p>
-                </div>
-                <div className="mx-auto flex w-full max-w-[420px] flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={handleDownloadShareCard}
-                    disabled={shareCardExportLoading}
-                    className="btn-premium w-full rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_44px_-10px_rgba(79,70,229,0.55)] ring-1 ring-indigo-400/30 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_22px_50px_-8px_rgba(99,102,241,0.55)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-[0.5] disabled:shadow-none disabled:ring-0"
-                  >
-                    {shareCardExportLoading ? "Creating image…" : "Download Card"}
-                  </button>
-                  {shareCardExportError && <p className="text-center text-xs text-rose-300">{shareCardExportError}</p>}
-                </div>
-              </div>
-            )}
+            <AnimatedScoreBars result={result} animateKey={resultRevealKey} />
 
-            <div className="mt-8 grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-              {scoreItems.map((item, index) => (
-                <article
-                  key={item.key}
-                  style={{ animationDelay: `${index * 70}ms` }}
-                  className="animate-slide-up rounded-2xl border border-white/[0.09] bg-slate-950/60 p-5 ring-1 ring-white/[0.06] transition duration-300 hover:-translate-y-1 hover:border-indigo-400/40 hover:bg-slate-900/65 hover:shadow-[0_24px_55px_-20px_rgba(99,102,241,0.32)]"
-                >
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
-                  <p className="mt-3 text-2xl font-bold tabular-nums text-indigo-200">{result.scoreBreakdown[item.key]}/10</p>
-                  <p className="mt-3 text-xs leading-relaxed text-slate-400">{result.scoreReasons[item.key]}</p>
-                </article>
-              ))}
-            </div>
+            <ShareableResultCard
+              ref={shareCardRef}
+              result={result}
+              badges={displayBadges}
+              occasion={occasionMode}
+              outfitPreviewUrl={previewUrl}
+              brutalMode={brutalMode}
+              onDownload={handleDownloadShareCard}
+              downloadLoading={shareCardExportLoading}
+              downloadError={shareCardExportError}
+            />
           </div>
 
-          <article className="rounded-3xl border border-white/[0.08] bg-slate-900/40 p-6 shadow-xl ring-1 ring-white/[0.04] backdrop-blur-lg sm:p-8">
+          <article className="w-full min-w-0 rounded-3xl border border-white/[0.08] bg-slate-900/40 p-4 shadow-xl ring-1 ring-white/[0.04] backdrop-blur-lg sm:p-8">
             <h3 className="text-lg font-semibold tracking-tight text-white">Detected Outfit Pieces</h3>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <DetectedItem label="Outerwear" value={result.detectedItems.outerwear} />
@@ -1209,7 +1065,7 @@ export default function Home() {
           </article>
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <article className="rounded-3xl border border-white/[0.08] bg-slate-900/40 p-6 shadow-lg ring-1 ring-white/[0.04] backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 sm:p-8">
+            <article className="w-full min-w-0 rounded-3xl border border-white/[0.08] bg-slate-900/40 p-4 shadow-lg ring-1 ring-white/[0.04] backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 sm:p-8">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Style Identity</p>
               <p className="mt-2 text-sm text-slate-100">{result.styleIdentity}</p>
 
@@ -1220,7 +1076,7 @@ export default function Home() {
               <p className="mt-2 text-sm text-slate-200">{result.colorAdvice}</p>
             </article>
 
-            <article className="rounded-3xl border border-white/[0.08] bg-slate-900/40 p-6 shadow-lg ring-1 ring-white/[0.04] backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 sm:p-8">
+            <article className="w-full min-w-0 rounded-3xl border border-white/[0.08] bg-slate-900/40 p-4 shadow-lg ring-1 ring-white/[0.04] backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 sm:p-8">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Best Part</p>
               <p className="mt-2 text-sm text-emerald-100">{result.bestPart}</p>
 
@@ -1241,7 +1097,7 @@ export default function Home() {
             </article>
           </div>
 
-          <article className="rounded-3xl border border-white/[0.08] bg-slate-900/40 p-6 shadow-xl ring-1 ring-white/[0.04] backdrop-blur-lg sm:p-8">
+          <article className="w-full min-w-0 rounded-3xl border border-white/[0.08] bg-slate-900/40 p-4 shadow-xl ring-1 ring-white/[0.04] backdrop-blur-lg sm:p-8">
             <h3 className="text-lg font-semibold tracking-tight text-white">3 Upgrade Ideas</h3>
             <div className="mt-6 grid gap-4 md:grid-cols-3">
               {result.upgradeIdeas.map((idea, index) => (
@@ -1260,7 +1116,7 @@ export default function Home() {
           </article>
 
           <div className="grid gap-6 md:grid-cols-2">
-            <article className="rounded-3xl border border-teal-400/20 bg-teal-950/30 p-6 shadow-lg ring-1 ring-teal-400/15 backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 sm:p-8">
+            <article className="w-full min-w-0 rounded-3xl border border-teal-400/20 bg-teal-950/30 p-4 shadow-lg ring-1 ring-teal-400/15 backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 sm:p-8">
               <h3 className="text-lg font-semibold text-teal-100">Do This</h3>
               <ul className="mt-4 space-y-2.5 text-sm leading-relaxed text-teal-50/95">
                 {result.dos.map((item, index) => (
@@ -1272,7 +1128,7 @@ export default function Home() {
               </ul>
             </article>
 
-            <article className="rounded-3xl border border-rose-400/20 bg-rose-950/35 p-6 shadow-lg ring-1 ring-rose-400/15 backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 sm:p-8">
+            <article className="w-full min-w-0 rounded-3xl border border-rose-400/20 bg-rose-950/35 p-4 shadow-lg ring-1 ring-rose-400/15 backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 sm:p-8">
               <h3 className="text-lg font-semibold text-rose-100">Avoid This</h3>
               <ul className="mt-4 space-y-2.5 text-sm leading-relaxed text-rose-50/95">
                 {result.donts.map((item, index) => (
@@ -1289,7 +1145,7 @@ export default function Home() {
 
       {compareResult && appMode === "compare" && (
         <section id="compare-results" className="animate-slide-up mx-auto mt-10 w-full max-w-6xl scroll-mt-28 space-y-6 sm:mt-12 sm:space-y-8">
-          <div className="rounded-3xl border border-white/[0.1] bg-slate-900/55 p-6 shadow-[0_28px_90px_-28px_rgba(139,92,246,0.28)] ring-1 ring-violet-400/15 backdrop-blur-xl sm:p-9">
+          <div className="w-full min-w-0 rounded-3xl border border-white/[0.1] bg-slate-900/55 p-4 shadow-[0_28px_90px_-28px_rgba(139,92,246,0.28)] ring-1 ring-violet-400/15 backdrop-blur-xl sm:p-9">
             <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">Compare results</h2>
             <p className="mt-2 text-sm text-slate-400">
               Judged for <span className="font-semibold text-indigo-300">{occasionMode}</span>
