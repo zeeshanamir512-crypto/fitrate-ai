@@ -26,16 +26,24 @@ function generateId(): string {
 
 export async function saveSharedResult(
   data: Omit<SharedResult, "id" | "createdAt">
-): Promise<string | null> {
-  if (!isRedisConfigured()) return null;
+): Promise<{ id: string; error?: never } | { id: null; error: string }> {
+  console.log("[resultStore] saveSharedResult — UPSTASH_REDIS_REST_URL present:", !!process.env.UPSTASH_REDIS_REST_URL, "| UPSTASH_REDIS_REST_TOKEN present:", !!process.env.UPSTASH_REDIS_REST_TOKEN);
+  if (!isRedisConfigured()) {
+    const msg = "Redis env vars missing (UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN)";
+    console.error("[resultStore]", msg);
+    return { id: null, error: msg };
+  }
   try {
     const redis = getRedis();
     const id = generateId();
     const entry: SharedResult = { ...data, id, createdAt: new Date().toISOString() };
     await redis.set(`result:${id}`, entry, { ex: TTL_SECONDS });
-    return id;
-  } catch {
-    return null;
+    console.log("[resultStore] saved result id:", id);
+    return { id };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[resultStore] Redis.set failed:", msg);
+    return { id: null, error: msg };
   }
 }
 
@@ -44,7 +52,8 @@ export async function getSharedResult(id: string): Promise<SharedResult | null> 
   try {
     const redis = getRedis();
     return await redis.get<SharedResult>(`result:${id}`);
-  } catch {
+  } catch (err) {
+    console.error("[resultStore] Redis.get failed:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }

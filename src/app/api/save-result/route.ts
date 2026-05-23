@@ -3,7 +3,11 @@ import { saveSharedResult } from "@/lib/resultStore";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import type { AnalysisResult } from "@/types/analysis";
 
+const IS_DEV = process.env.NODE_ENV === "development";
+
 export async function POST(request: Request) {
+  console.log("[save-result] POST — NODE_ENV:", process.env.NODE_ENV, "| UPSTASH_REDIS_REST_URL present:", !!process.env.UPSTASH_REDIS_REST_URL, "| UPSTASH_REDIS_REST_TOKEN present:", !!process.env.UPSTASH_REDIS_REST_TOKEN);
+
   const ip = getClientIp(new Headers(request.headers));
   const { allowed } = checkRateLimit(`save:${ip}`, 10);
   if (!allowed) {
@@ -21,15 +25,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid result data" }, { status: 400 });
   }
 
-  const id = await saveSharedResult({
+  const saved = await saveSharedResult({
     result: body.result,
     occasion: body.occasion ?? "Casual",
   });
 
-  if (!id) {
-    return NextResponse.json({ error: "Storage not available" }, { status: 503 });
+  if (!saved.id) {
+    console.error("[save-result] saveSharedResult returned null id. error:", saved.error);
+    return NextResponse.json(
+      IS_DEV
+        ? { error: "Storage not available", debug: { redisError: saved.error, urlPresent: !!process.env.UPSTASH_REDIS_REST_URL, tokenPresent: !!process.env.UPSTASH_REDIS_REST_TOKEN } }
+        : { error: "Storage not available" },
+      { status: 503 }
+    );
   }
 
   const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://fitrate-ai.vercel.app";
-  return NextResponse.json({ id, url: `${APP_URL}/r/${id}` });
+  return NextResponse.json({ id: saved.id, url: `${APP_URL}/r/${saved.id}` });
 }
