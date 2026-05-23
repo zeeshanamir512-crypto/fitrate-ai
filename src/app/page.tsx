@@ -12,8 +12,10 @@ import { LiveAnalysisPreview } from "@/components/LiveAnalysisPreview";
 import { OccasionSelect, type OccasionMode } from "@/components/OccasionSelect";
 import { ShareableResultCard } from "@/components/ShareableResultCard";
 import { inferFashionBadges, sanitizeFashionBadges, type FashionBadgeId } from "@/lib/fashionBadges";
+import { addToFitHistory, loadFitHistory, makeThumbnail, saveFitHistory, type FitHistoryEntry } from "@/lib/fitHistory";
 import { prepareImageFile, readFileAsDataUrl, retainFile } from "@/lib/prepareImageFile";
 import { readApiJson } from "@/lib/readApiJson";
+import { RecentFits } from "@/components/RecentFits";
 import type { AnalysisResult, Difficulty } from "@/types/analysis";
 type AppMode = "single" | "compare";
 
@@ -96,6 +98,7 @@ export default function Home() {
 
   const [brutalMode, setBrutalMode] = useState(false);
   const [resultRevealKey, setResultRevealKey] = useState(0);
+  const [fitHistory, setFitHistory] = useState<FitHistoryEntry[]>([]);
   const [shareCardExportLoading, setShareCardExportLoading] = useState(false);
   const [shareCardExportError, setShareCardExportError] = useState<string | null>(null);
 
@@ -108,6 +111,8 @@ export default function Home() {
   const compareBlobBRef = useRef<string | null>(null);
   const shareCardRef = useRef<HTMLDivElement | null>(null);
   const compareShareCardRef = useRef<HTMLDivElement | null>(null);
+  const resultSectionRef = useRef<HTMLElement | null>(null);
+  const compareResultSectionRef = useRef<HTMLElement | null>(null);
 
   const [singleDragOver, setSingleDragOver] = useState(false);
   const [compareDragA, setCompareDragA] = useState(false);
@@ -136,6 +141,7 @@ export default function Home() {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem(BRUTAL_MODE_STORAGE_KEY);
     if (stored === "1") setBrutalMode(true);
+    setFitHistory(loadFitHistory());
   }, []);
 
   useEffect(() => {
@@ -152,6 +158,22 @@ export default function Home() {
     setCompareShareCardPreviewVisible(false);
     setCompareShareCardExportError(null);
     setCompareShareCardExportLoading(false);
+  }, [compareResult]);
+
+  useEffect(() => {
+    if (!result) return;
+    const id = window.setTimeout(() => {
+      resultSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    return () => window.clearTimeout(id);
+  }, [result]);
+
+  useEffect(() => {
+    if (!compareResult) return;
+    const id = window.setTimeout(() => {
+      compareResultSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    return () => window.clearTimeout(id);
   }, [compareResult]);
 
   // Small helper: clean up previous blob preview when user picks another file.
@@ -360,6 +382,21 @@ export default function Home() {
 
       setResult(data.result);
       setResultRevealKey((k) => k + 1);
+
+      // Save to history (async, non-blocking)
+      void (async () => {
+        const thumb = previewUrl ? await makeThumbnail(previewUrl) : null;
+        const sanitizedBadges = sanitizeFashionBadges(data.result!.fashionBadges);
+        const updated = addToFitHistory(loadFitHistory(), {
+          score: data.result!.overallRating,
+          occasion: occasionMode,
+          badges: sanitizedBadges.length > 0 ? sanitizedBadges : inferFashionBadges(data.result!).slice(0, 2),
+          styleIdentity: data.result!.styleIdentity,
+          thumbnail: thumb,
+        });
+        saveFitHistory(updated);
+        setFitHistory(updated);
+      })();
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === "AbortError") {
         setErrorMessage("Analysis timed out. Try a smaller image or retry in a moment.");
@@ -642,9 +679,11 @@ export default function Home() {
           </div>
         </div>
 
+        <RecentFits history={fitHistory} />
+
         <div
           id="app-panel"
-          className="rounded-[1.35rem] bg-gradient-to-br from-indigo-500/48 via-violet-500/30 to-cyan-500/20 p-px shadow-[0_44px_128px_-34px_rgba(79,70,229,0.62),0_0_80px_-40px_rgba(34,211,238,0.14)] ring-1 ring-white/[0.1]"
+          className="mt-8 rounded-[1.35rem] bg-gradient-to-br from-indigo-500/48 via-violet-500/30 to-cyan-500/20 p-px shadow-[0_44px_128px_-34px_rgba(79,70,229,0.62),0_0_80px_-40px_rgba(34,211,238,0.14)] ring-1 ring-white/[0.1]"
         >
           <div className="relative w-full min-w-0 overflow-hidden rounded-[1.3rem] border border-white/[0.1] bg-slate-900/70 p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1),inset_0_-1px_0_0_rgba(99,102,241,0.07)] backdrop-blur-3xl sm:p-8">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_85%_62%_at_18%_-4%,rgba(99,102,241,0.14),transparent),radial-gradient(ellipse_65%_52%_at_100%_102%,rgba(34,211,238,0.1),transparent),radial-gradient(ellipse_45%_38%_at_50%_108%,rgba(167,139,250,0.06),transparent)]" aria-hidden />
@@ -979,7 +1018,7 @@ export default function Home() {
       </div>
 
       {result && appMode === "single" && (
-        <section className="animate-slide-up mx-auto mt-12 w-full max-w-6xl space-y-8">
+        <section ref={resultSectionRef} className="animate-slide-up mx-auto mt-12 w-full max-w-6xl space-y-8">
           <div className="w-full min-w-0 rounded-3xl border border-white/[0.1] bg-slate-900/55 p-4 shadow-[0_28px_90px_-28px_rgba(79,70,229,0.35)] ring-1 ring-indigo-400/15 backdrop-blur-xl sm:p-9">
             <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0 flex-1">
@@ -1144,7 +1183,7 @@ export default function Home() {
       )}
 
       {compareResult && appMode === "compare" && (
-        <section id="compare-results" className="animate-slide-up mx-auto mt-10 w-full max-w-6xl scroll-mt-28 space-y-6 sm:mt-12 sm:space-y-8">
+        <section ref={compareResultSectionRef} id="compare-results" className="animate-slide-up mx-auto mt-10 w-full max-w-6xl scroll-mt-28 space-y-6 sm:mt-12 sm:space-y-8">
           <div className="w-full min-w-0 rounded-3xl border border-white/[0.1] bg-slate-900/55 p-4 shadow-[0_28px_90px_-28px_rgba(139,92,246,0.28)] ring-1 ring-violet-400/15 backdrop-blur-xl sm:p-9">
             <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">Compare results</h2>
             <p className="mt-2 text-sm text-slate-400">

@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { jsonPayload } from "@/lib/jsonResponse";
 import { getOpenAiApiKey, OPENAI_API_KEY_SETUP_ERROR } from "@/lib/openaiApiKey";
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -229,6 +230,11 @@ async function blobsToPayload(request: Request): Promise<
 
 export async function POST(request: Request) {
   try {
+    const ip = getClientIp(request.headers);
+    if (!checkRateLimit(ip, 6).allowed) {
+      return jsonPayload({ error: "Too many requests — please wait a moment and try again." }, 429);
+    }
+
     const apiKey = getOpenAiApiKey();
     if (!apiKey) {
       return jsonPayload({ error: OPENAI_API_KEY_SETUP_ERROR }, 500);

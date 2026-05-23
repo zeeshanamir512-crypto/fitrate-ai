@@ -10,6 +10,7 @@ html {
 
 body {
   @apply overflow-x-hidden bg-[#030712] text-slate-100 antialiased;
+  font-family: var(--font-space-grotesk), ui-sans-serif, system-ui, -apple-system, sans-serif;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -322,6 +323,27 @@ body {
 
   .fitrate-upload-scan-line {
     opacity: 0;
+  }
+
+  .animate-pulse-glow-badge,
+  .animate-title-glow,
+  .fitrate-pill-pulse,
+  .fitrate-live-preview-glow-ring,
+  .fitrate-live-preview-particle {
+    animation: none !important;
+  }
+
+  .animate-fade-in,
+  .animate-slide-up,
+  .fitrate-live-preview-root,
+  .fitrate-occasion-menu {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+
+  .fitrate-live-preview-bar {
+    animation: fitrate-live-preview-bar 0.001ms forwards !important;
   }
 
 }
