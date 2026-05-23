@@ -1,4 +1,4 @@
-import { kv } from "@vercel/kv";
+import { Redis } from "@upstash/redis";
 import type { AnalysisResult } from "@/types/analysis";
 
 export type SharedResult = {
@@ -10,8 +10,12 @@ export type SharedResult = {
 
 const TTL_SECONDS = 30 * 24 * 60 * 60;
 
-function isKvConfigured(): boolean {
-  return !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+function isRedisConfigured(): boolean {
+  return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+}
+
+function getRedis(): Redis {
+  return Redis.fromEnv();
 }
 
 function generateId(): string {
@@ -23,11 +27,12 @@ function generateId(): string {
 export async function saveSharedResult(
   data: Omit<SharedResult, "id" | "createdAt">
 ): Promise<string | null> {
-  if (!isKvConfigured()) return null;
+  if (!isRedisConfigured()) return null;
   try {
+    const redis = getRedis();
     const id = generateId();
     const entry: SharedResult = { ...data, id, createdAt: new Date().toISOString() };
-    await kv.set(`result:${id}`, entry, { ex: TTL_SECONDS });
+    await redis.set(`result:${id}`, entry, { ex: TTL_SECONDS });
     return id;
   } catch {
     return null;
@@ -35,9 +40,10 @@ export async function saveSharedResult(
 }
 
 export async function getSharedResult(id: string): Promise<SharedResult | null> {
-  if (!isKvConfigured()) return null;
+  if (!isRedisConfigured()) return null;
   try {
-    return await kv.get<SharedResult>(`result:${id}`);
+    const redis = getRedis();
+    return await redis.get<SharedResult>(`result:${id}`);
   } catch {
     return null;
   }

@@ -11,8 +11,8 @@
     "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true});\" && next dev --webpack"
   },
   "dependencies": {
+    "@upstash/redis": "^1.38.0",
     "@vercel/analytics": "^2.0.1",
-    "@vercel/kv": "^3.0.0",
     "framer-motion": "^12.40.0",
     "html-to-image": "^1.11.13",
     "next": "^16.2.6",
