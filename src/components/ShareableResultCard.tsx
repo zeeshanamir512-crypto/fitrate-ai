@@ -98,6 +98,7 @@ export const ShareableResultCard = forwardRef<HTMLDivElement, ShareableResultCar
     const [copyStatus, setCopyStatus] = useState<"idle" | "ok" | "err">("idle");
     const [nativeShareStatus, setNativeShareStatus] = useState<"idle" | "ok">("idle");
     const [format, setFormat] = useState<CardFormat>("post");
+    const [challengeStatus, setChallengeStatus] = useState<"idle" | "loading" | "ok" | "err">("idle");
     const ratedLabel = useMemo(() => formatRatedLabel(), []);
     const shareText = useMemo(() => buildShareText(result, badges, occasion), [result, badges, occasion]);
     const canNativeShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
@@ -116,6 +117,25 @@ export const ShareableResultCard = forwardRef<HTMLDivElement, ShareableResultCar
     function handleShareX() {
       const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
       window.open(url, "_blank", "noopener,noreferrer,width=600,height=500");
+    }
+
+    async function handleCopyChallenge() {
+      setChallengeStatus("loading");
+      try {
+        const res = await fetch("/api/save-result", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ result, occasion }),
+        });
+        if (!res.ok) throw new Error("save failed");
+        const data = (await res.json()) as { url: string };
+        await navigator.clipboard.writeText(data.url);
+        setChallengeStatus("ok");
+        window.setTimeout(() => setChallengeStatus("idle"), 3500);
+      } catch {
+        setChallengeStatus("err");
+        window.setTimeout(() => setChallengeStatus("idle"), 2500);
+      }
     }
 
     async function handleNativeShare() {
@@ -277,6 +297,23 @@ export const ShareableResultCard = forwardRef<HTMLDivElement, ShareableResultCar
             className="btn-premium min-h-11 w-full touch-manipulation rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_44px_-10px_rgba(79,70,229,0.55)] ring-1 ring-indigo-400/30 disabled:opacity-50"
           >
             {downloadLoading ? "Creating image…" : `Download ${format === "story" ? "Story" : "Card"}`}
+          </motion.button>
+
+          <motion.button
+            type="button"
+            onClick={() => void handleCopyChallenge()}
+            disabled={challengeStatus === "loading"}
+            whileHover={{ scale: challengeStatus === "loading" ? 1 : 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="min-h-11 w-full touch-manipulation rounded-xl border border-cyan-400/30 bg-gradient-to-r from-cyan-500/10 via-slate-950/60 to-violet-500/10 px-4 py-3 text-sm font-semibold text-cyan-100 ring-1 ring-cyan-400/20 transition hover:border-cyan-400/50 disabled:opacity-60"
+          >
+            {challengeStatus === "loading"
+              ? "Saving result…"
+              : challengeStatus === "ok"
+                ? "Challenge link copied!"
+                : challengeStatus === "err"
+                  ? "Failed — try again"
+                  : "Copy challenge link"}
           </motion.button>
 
           <div className="grid grid-cols-3 gap-2">
