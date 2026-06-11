@@ -167,6 +167,12 @@ export default async function ResultPage({ params }: Props) {
               Can you beat this score?
             </Link>
             <Link
+              href={`/battle/new?a=${data.id}`}
+              className="block w-full rounded-xl border border-violet-400/30 bg-gradient-to-r from-violet-600/15 via-indigo-600/15 to-violet-600/15 px-4 py-3.5 text-center text-sm font-bold text-violet-200 ring-1 ring-violet-400/20 transition hover:border-violet-400/50 hover:text-white active:scale-[0.98]"
+            >
+              ⚔ Start a Battle
+            </Link>
+            <Link
               href="/"
               className="block w-full rounded-xl border border-white/[0.1] bg-slate-950/60 px-4 py-3.5 text-center text-sm font-semibold text-slate-300 ring-1 ring-white/[0.05] transition hover:border-indigo-400/30 hover:text-white active:scale-[0.98]"
             >

@@ -103,6 +103,7 @@ export default function Home() {
   const [fitHistory, setFitHistory] = useState<FitHistoryEntry[]>([]);
   const [shareCardExportLoading, setShareCardExportLoading] = useState(false);
   const [shareCardExportError, setShareCardExportError] = useState<string | null>(null);
+  const [battleLoading, setBattleLoading] = useState(false);
 
   const [compareShareCardPreviewVisible, setCompareShareCardPreviewVisible] = useState(false);
   const [compareShareCardExportLoading, setCompareShareCardExportLoading] = useState(false);
@@ -494,6 +495,26 @@ export default function Home() {
       setShareCardExportError("Could not create the image. Try again or use a different browser.");
     } finally {
       setShareCardExportLoading(false);
+    }
+  }
+
+  async function handleStartBattle() {
+    if (!result || battleLoading) return;
+    setBattleLoading(true);
+    try {
+      const res = await fetch("/api/save-result", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ result, occasion: occasionMode }),
+      });
+      const data = (await res.json()) as { id?: string; error?: string };
+      if (res.ok && data.id) {
+        window.location.href = `/battle/new?a=${data.id}`;
+      }
+    } catch {
+      // silently fail — button just stops loading
+    } finally {
+      setBattleLoading(false);
     }
   }
 
@@ -1073,6 +1094,24 @@ export default function Home() {
               downloadLoading={shareCardExportLoading}
               downloadError={shareCardExportError}
             />
+
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={handleStartBattle}
+                disabled={battleLoading}
+                className="w-full rounded-xl border border-violet-400/30 bg-gradient-to-r from-violet-600/20 via-indigo-600/20 to-violet-600/20 px-4 py-3 text-sm font-bold text-violet-200 ring-1 ring-violet-400/20 transition hover:border-violet-400/50 hover:bg-gradient-to-r hover:from-violet-600/30 hover:via-indigo-600/30 hover:to-violet-600/30 hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {battleLoading ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-300/30 border-t-violet-200" />
+                    Saving…
+                  </span>
+                ) : (
+                  "⚔ Start a Battle"
+                )}
+              </button>
+            </div>
           </div>
 
           <article className="w-full min-w-0 rounded-3xl border border-white/[0.08] bg-slate-900/40 p-4 shadow-xl ring-1 ring-white/[0.04] backdrop-blur-lg sm:p-8">
