@@ -6,8 +6,6 @@ import type { AnalysisResult } from "@/types/analysis";
 const IS_DEV = process.env.NODE_ENV === "development";
 
 export async function POST(request: Request) {
-  console.log("[save-result] POST — NODE_ENV:", process.env.NODE_ENV, "| UPSTASH_REDIS_REST_URL present:", !!process.env.UPSTASH_REDIS_REST_URL, "| UPSTASH_REDIS_REST_TOKEN present:", !!process.env.UPSTASH_REDIS_REST_TOKEN);
-
   const ip = getClientIp(new Headers(request.headers));
   const { allowed } = checkRateLimit(`save:${ip}`, 10);
   if (!allowed) {

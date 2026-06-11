@@ -27,7 +27,6 @@ function generateId(): string {
 export async function saveSharedResult(
   data: Omit<SharedResult, "id" | "createdAt">
 ): Promise<{ id: string; error?: never } | { id: null; error: string }> {
-  console.log("[resultStore] saveSharedResult — UPSTASH_REDIS_REST_URL present:", !!process.env.UPSTASH_REDIS_REST_URL, "| UPSTASH_REDIS_REST_TOKEN present:", !!process.env.UPSTASH_REDIS_REST_TOKEN);
   if (!isRedisConfigured()) {
     const msg = "Redis env vars missing (UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN)";
     console.error("[resultStore]", msg);
@@ -38,7 +37,6 @@ export async function saveSharedResult(
     const id = generateId();
     const entry: SharedResult = { ...data, id, createdAt: new Date().toISOString() };
     await redis.set(`result:${id}`, entry, { ex: TTL_SECONDS });
-    console.log("[resultStore] saved result id:", id);
     return { id };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
