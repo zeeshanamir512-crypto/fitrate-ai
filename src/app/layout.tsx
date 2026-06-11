@@ -74,6 +74,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={spaceGrotesk.variable}>
       <body>
+        <div
+          className="pointer-events-none fixed inset-0 overflow-hidden"
+          style={{ zIndex: -20 }}
+          aria-hidden="true"
+        >
+          <span className="fitrate-stars-sm" />
+          <span className="fitrate-stars-md" />
+          <span className="fitrate-shooting-star" />
+        </div>
         <ErrorBoundary>{children}</ErrorBoundary>
         <Analytics />
       </body>
