@@ -6,6 +6,7 @@ export type SharedResult = {
   createdAt: string;
   occasion: string;
   result: AnalysisResult;
+  thumbnailUrl?: string;
 };
 
 const TTL_SECONDS = 30 * 24 * 60 * 60;

@@ -89,6 +89,17 @@ function OutfitCard({
           {label}
         </p>
 
+        {/* Outfit photo */}
+        {result.thumbnailUrl && (
+          <div className="mb-4 overflow-hidden rounded-2xl">
+            <img
+              src={result.thumbnailUrl}
+              alt={`Outfit ${label}`}
+              className="h-52 w-full object-cover object-top"
+            />
+          </div>
+        )}
+
         {/* Score */}
         <div className="mb-4 rounded-2xl border border-indigo-400/20 bg-gradient-to-br from-indigo-500/10 via-slate-950/50 to-violet-600/10 px-4 py-4 text-center ring-1 ring-indigo-400/15">
           <p className={`text-6xl font-extrabold leading-none tracking-tight tabular-nums sm:text-7xl ${scoreColor(score)}`}>

@@ -502,10 +502,14 @@ export default function Home() {
     if (!result || battleLoading) return;
     setBattleLoading(true);
     try {
+      let thumbnailUrl: string | undefined;
+      if (previewUrl) {
+        thumbnailUrl = (await makeThumbnail(previewUrl)) ?? undefined;
+      }
       const res = await fetch("/api/save-result", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ result, occasion: occasionMode }),
+        body: JSON.stringify({ result, occasion: occasionMode, ...(thumbnailUrl ? { thumbnailUrl } : {}) }),
       });
       const data = (await res.json()) as { id?: string; error?: string };
       if (res.ok && data.id) {

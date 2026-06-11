@@ -12,9 +12,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Rate limited" }, { status: 429 });
   }
 
-  let body: { result: AnalysisResult; occasion: string };
+  let body: { result: AnalysisResult; occasion: string; thumbnailUrl?: string };
   try {
-    body = (await request.json()) as { result: AnalysisResult; occasion: string };
+    body = (await request.json()) as { result: AnalysisResult; occasion: string; thumbnailUrl?: string };
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -23,9 +23,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid result data" }, { status: 400 });
   }
 
+  const thumbnailUrl =
+    typeof body.thumbnailUrl === "string" &&
+    body.thumbnailUrl.startsWith("data:image/jpeg;base64,") &&
+    body.thumbnailUrl.length <= 51200
+      ? body.thumbnailUrl
+      : undefined;
+
   const saved = await saveSharedResult({
     result: body.result,
     occasion: body.occasion ?? "Casual",
+    ...(thumbnailUrl ? { thumbnailUrl } : {}),
   });
 
   if (!saved.id) {
