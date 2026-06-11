@@ -16,6 +16,8 @@ import { addToFitHistory, loadFitHistory, makeThumbnail, saveFitHistory, type Fi
 import { prepareImageFile, readFileAsDataUrl, retainFile } from "@/lib/prepareImageFile";
 import { readApiJson } from "@/lib/readApiJson";
 import { RecentFits } from "@/components/RecentFits";
+import { StreakBadge } from "@/components/StreakBadge";
+import { getStreak, updateStreak } from "@/lib/streak";
 import type { AnalysisResult, Difficulty } from "@/types/analysis";
 type AppMode = "single" | "compare";
 
@@ -118,6 +120,9 @@ export default function Home() {
   const [compareDragA, setCompareDragA] = useState(false);
   const [compareDragB, setCompareDragB] = useState(false);
 
+  const [streak, setStreak] = useState(0);
+  const [streakJustIncreased, setStreakJustIncreased] = useState(false);
+
   const scoreRingGradientId = useId().replace(/:/g, "");
 
   const canAnalyze = useMemo(() => Boolean(selectedFile) && !isAnalyzing, [selectedFile, isAnalyzing]);
@@ -142,6 +147,7 @@ export default function Home() {
     const stored = window.localStorage.getItem(BRUTAL_MODE_STORAGE_KEY);
     if (stored === "1") setBrutalMode(true);
     setFitHistory(loadFitHistory());
+    setStreak(getStreak());
   }, []);
 
   useEffect(() => {
@@ -383,6 +389,13 @@ export default function Home() {
       setResult(data.result);
       setResultRevealKey((k) => k + 1);
 
+      const { count, increased } = updateStreak();
+      setStreak(count);
+      if (increased) {
+        setStreakJustIncreased(true);
+        setTimeout(() => setStreakJustIncreased(false), 2500);
+      }
+
       // Save to history (async, non-blocking)
       void (async () => {
         const thumb = previewUrl ? await makeThumbnail(previewUrl) : null;
@@ -558,6 +571,7 @@ export default function Home() {
             FitRate AI
           </a>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-0.5 overflow-x-auto text-[11px] font-medium text-slate-400 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] sm:gap-4 sm:overflow-visible sm:text-xs [&::-webkit-scrollbar]:hidden">
+            <StreakBadge streak={streak} justIncreased={streakJustIncreased} />
             <a href="#features" className="fitrate-nav-link shrink-0 rounded-full transition hover:bg-white/[0.06] hover:text-white">
               Features
             </a>
