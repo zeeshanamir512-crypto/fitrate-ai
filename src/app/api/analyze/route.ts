@@ -733,7 +733,7 @@ export async function POST(request: Request) {
     }
     const { imageDataUrl, occasion, brutalMode } = payloadOrError;
 
-    const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o-mini";
+    const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o";
     const client = new OpenAI({
       apiKey,
       timeout: 90_000,
@@ -741,6 +741,12 @@ export async function POST(request: Request) {
     });
 
     const prompt = `You are a premium personal stylist AI.
+
+FIRST — before doing anything else — check whether the image contains a person wearing an outfit (clothing on a human body).
+- If the image does NOT show a person wearing clothes (e.g. food, objects, animals, landscapes, blank walls, text, screenshots, abstract art, or anything that is clearly not a clothed human), immediately return this exact JSON and nothing else:
+{"error":"no_outfit","message":"No outfit detected. Please upload a photo of yourself or someone wearing clothes."}
+- If the image DOES contain a person wearing an outfit, proceed with the full analysis below.
+
 You are judging the outfit for this exact occasion: "${occasion}".
 
 Step 1: identify visible outfit pieces first:
@@ -848,11 +854,15 @@ Streetwear accessory & pants notes:
       return jsonPayload({ error: "No analysis returned from AI model." }, 502);
     }
 
-    let parsed: Partial<AnalysisResult>;
+    let parsed: Partial<AnalysisResult> & { error?: string; message?: string };
     try {
-      parsed = parseJsonFromModelText<Partial<AnalysisResult>>(outputText);
+      parsed = parseJsonFromModelText<Partial<AnalysisResult> & { error?: string; message?: string }>(outputText);
     } catch {
       return jsonPayload({ error: "AI returned invalid JSON. Please try again." }, 502);
+    }
+
+    if (parsed.error === "no_outfit") {
+      return jsonPayload({ error: parsed.error, message: parsed.message }, 422);
     }
 
     let result: AnalysisResult;

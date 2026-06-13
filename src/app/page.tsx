@@ -370,7 +370,7 @@ export default function Home() {
         signal: controller.signal
       });
 
-      const parsed = await readApiJson<{ error?: string; result?: AnalysisResult }>(response);
+      const parsed = await readApiJson<{ error?: string; message?: string; result?: AnalysisResult }>(response);
       if (!parsed.ok) {
         setErrorMessage(parsed.message);
         return;
@@ -378,7 +378,11 @@ export default function Home() {
       const data = parsed.data;
 
       if (!response.ok) {
-        setErrorMessage(data.error ?? "Something went wrong during analysis.");
+        if (data.error === "no_outfit") {
+          setErrorMessage(`❌ ${data.message ?? "No outfit detected. Please upload a photo of yourself or someone wearing clothes."}`);
+        } else {
+          setErrorMessage(data.error ?? "Something went wrong during analysis.");
+        }
         return;
       }
 
@@ -445,7 +449,7 @@ export default function Home() {
         signal: controller.signal
       });
 
-      const parsed = await readApiJson<{ error?: string; compare?: CompareOutfitsResult }>(response);
+      const parsed = await readApiJson<{ error?: string; message?: string; compare?: CompareOutfitsResult }>(response);
       if (!parsed.ok) {
         setCompareError(parsed.message);
         return;
@@ -453,7 +457,11 @@ export default function Home() {
       const data = parsed.data;
 
       if (!response.ok) {
-        setCompareError(data.error ?? "Comparison failed.");
+        if (data.error === "no_outfit") {
+          setCompareError(`❌ ${data.message ?? "No outfit detected. Please upload a photo of yourself or someone wearing clothes."}`);
+        } else {
+          setCompareError(data.error ?? "Comparison failed.");
+        }
         return;
       }
       if (!data.compare) {

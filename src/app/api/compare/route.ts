@@ -244,7 +244,7 @@ export async function POST(request: Request) {
     if (payload instanceof NextResponse) return payload;
     const { imageAUrl, imageBUrl, occasion } = payload;
 
-    const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o-mini";
+    const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o";
     const client = new OpenAI({
       apiKey,
       timeout: 90_000,
@@ -252,6 +252,11 @@ export async function POST(request: Request) {
     });
 
     const baseComparePrompt = `You compare two outfits for FitRate AI. Occasion judging mode: "${occasion}".
+
+FIRST — before doing anything else — check whether BOTH images contain a person wearing an outfit (clothing on a human body).
+- If EITHER image does NOT show a person wearing clothes (e.g. food, objects, animals, landscapes, blank walls, text, screenshots, or anything that is clearly not a clothed human), immediately return this exact JSON and nothing else:
+{"error":"no_outfit","message":"No outfit detected. Please upload a photo of yourself or someone wearing clothes."}
+- If BOTH images contain people wearing outfits, proceed with the full comparison below.
 
 You will see TWO full-frame outfit photos in order:
 - Image A = Outfit A (first image)
@@ -345,11 +350,15 @@ Strict field rules:
       return jsonPayload({ error: "No comparison returned from AI model." }, 502);
     }
 
-    let parsed: Partial<OutfitCompareResult>;
+    let parsed: Partial<OutfitCompareResult> & { error?: string; message?: string };
     try {
-      parsed = parseJsonFromModelText<Partial<OutfitCompareResult>>(outputText);
+      parsed = parseJsonFromModelText<Partial<OutfitCompareResult> & { error?: string; message?: string }>(outputText);
     } catch {
       return jsonPayload({ error: "AI returned invalid JSON. Try again." }, 502);
+    }
+
+    if (parsed.error === "no_outfit") {
+      return jsonPayload({ error: parsed.error, message: parsed.message }, 422);
     }
 
     let compare: OutfitCompareResult;
