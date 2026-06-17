@@ -19,7 +19,10 @@ export type OccasionMode =
   | "Gym"
   | "Party"
   | "Streetwear"
-  | "Smart casual";
+  | "Smart casual"
+  | "Business"
+  | "Festival"
+  | "Beach";
 
 export const OCCASIONS: OccasionMode[] = [
   "Casual",
@@ -28,7 +31,10 @@ export const OCCASIONS: OccasionMode[] = [
   "Gym",
   "Party",
   "Streetwear",
-  "Smart casual"
+  "Smart casual",
+  "Business",
+  "Festival",
+  "Beach"
 ];
 
 const OCCASION_EMOJI: Record<OccasionMode, string> = {
@@ -38,7 +44,10 @@ const OCCASION_EMOJI: Record<OccasionMode, string> = {
   Gym: "💪",
   Party: "✨",
   Streetwear: "🧢",
-  "Smart casual": "👔"
+  "Smart casual": "👔",
+  Business: "💼",
+  Festival: "🎪",
+  Beach: "🏖️"
 };
 
 export type OccasionSelectProps = {

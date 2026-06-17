@@ -12,7 +12,7 @@ export const maxDuration = 120;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type OccasionMode = "Casual" | "School" | "Date" | "Gym" | "Party" | "Streetwear" | "Smart casual";
+type OccasionMode = "Casual" | "School" | "Date" | "Gym" | "Party" | "Streetwear" | "Smart casual" | "Business" | "Festival" | "Beach";
 
 type AnalyzeRequestPayload = {
   imageDataUrl: string;
@@ -83,7 +83,7 @@ const outputFormatExample: AnalysisResult = {
 };
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // keep requests small and fast
-const OCCASIONS: OccasionMode[] = ["Casual", "School", "Date", "Gym", "Party", "Streetwear", "Smart casual"];
+const OCCASIONS: OccasionMode[] = ["Casual", "School", "Date", "Gym", "Party", "Streetwear", "Smart casual", "Business", "Festival", "Beach"];
 
 function clampScore(value: unknown): number {
   return Math.min(10, Math.max(1, Number(value ?? 7)));

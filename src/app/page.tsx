@@ -124,6 +124,9 @@ export default function Home() {
   const [streak, setStreak] = useState(0);
   const [streakJustIncreased, setStreakJustIncreased] = useState(false);
 
+  const [aiDetectedOccasion, setAiDetectedOccasion] = useState<OccasionMode | null>(null);
+  const [isDetectingOccasion, setIsDetectingOccasion] = useState(false);
+
   const scoreRingGradientId = useId().replace(/:/g, "");
 
   const canAnalyze = useMemo(() => Boolean(selectedFile) && !isAnalyzing, [selectedFile, isAnalyzing]);
@@ -183,12 +186,63 @@ export default function Home() {
     return () => window.clearTimeout(id);
   }, [compareResult]);
 
+  useEffect(() => {
+    if (!selectedFile) {
+      setAiDetectedOccasion(null);
+      setIsDetectingOccasion(false);
+      return;
+    }
+
+    let cancelled = false;
+    setAiDetectedOccasion(null);
+    setIsDetectingOccasion(true);
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 3000);
+
+    void (async () => {
+      try {
+        const formData = new FormData();
+        formData.set("file", selectedFile);
+        const response = await fetch("/api/detect-occasion", {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+        if (cancelled || !response.ok) return;
+        const data = (await response.json()) as { occasion?: string };
+        if (cancelled) return;
+        const detected = data.occasion as OccasionMode | undefined;
+        if (detected) {
+          setOccasionMode(detected);
+          setAiDetectedOccasion(detected);
+        }
+      } catch {
+        // silently fall back — keep current selection
+      } finally {
+        window.clearTimeout(timeoutId);
+        if (!cancelled) setIsDetectingOccasion(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      setIsDetectingOccasion(false);
+    };
+  }, [selectedFile]);
+
   // Small helper: clean up previous blob preview when user picks another file.
   function clearPreviewBlob() {
     if (previewBlobRef.current) {
       URL.revokeObjectURL(previewBlobRef.current);
       previewBlobRef.current = null;
     }
+  }
+
+  function handleOccasionChange(val: OccasionMode) {
+    setOccasionMode(val);
+    setAiDetectedOccasion(null);
   }
 
   function switchAppMode(next: AppMode) {
@@ -763,10 +817,18 @@ export default function Home() {
             </button>
           </div>
 
-          <label htmlFor="occasion" className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+          <label htmlFor="occasion" className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
             Occasion mode
+            {isDetectingOccasion && (
+              <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-slate-600 border-t-indigo-400" aria-hidden />
+            )}
           </label>
-          <OccasionSelect id="occasion" value={occasionMode} onChange={setOccasionMode} />
+          <OccasionSelect id="occasion" value={occasionMode} onChange={handleOccasionChange} disabled={isDetectingOccasion} />
+          {aiDetectedOccasion && (
+            <p className="-mt-4 mb-4 flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-indigo-400/85">
+              ✨ AI detected: <span className="font-semibold text-indigo-300">{aiDetectedOccasion}</span>
+            </p>
+          )}
 
           {appMode === "single" && <BrutalModeToggle enabled={brutalMode} onChange={setBrutalMode} />}
 
