@@ -742,10 +742,12 @@ export async function POST(request: Request) {
 
     const prompt = `You are a premium personal stylist AI.
 
-FIRST — before doing anything else — check whether the image contains a person wearing an outfit (clothing on a human body).
-- If the image does NOT show a person wearing clothes (e.g. food, objects, animals, landscapes, blank walls, text, screenshots, abstract art, or anything that is clearly not a clothed human), immediately return this exact JSON and nothing else:
+FIRST — before doing anything else — check whether the image contains a person wearing any type of clothing.
+- ONLY reject if the image clearly has NO person wearing clothes at all: pure food photos, landscapes, objects, animals with no humans present, blank walls, text/screenshots, or abstract art.
+- ALWAYS proceed if a person is visible wearing ANY type of clothing — including gym wear, sportswear, activewear, swimwear, costumes, uniforms, or any other clothing. When in doubt, proceed with analysis.
+- If and ONLY if the image is clearly not a clothed human at all, return this exact JSON and nothing else:
 {"error":"no_outfit","message":"No outfit detected. Please upload a photo of yourself or someone wearing clothes."}
-- If the image DOES contain a person wearing an outfit, proceed with the full analysis below.
+- Otherwise proceed with the full analysis below.
 
 You are judging the outfit for this exact occasion: "${occasion}".
 
