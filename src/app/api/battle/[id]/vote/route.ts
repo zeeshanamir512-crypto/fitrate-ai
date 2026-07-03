@@ -7,7 +7,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
   const ip = getClientIp(new Headers(request.headers));
-  const { allowed } = checkRateLimit(`battle-vote:${ip}`, 20);
+  const { allowed } = await checkRateLimit(`battle-vote:${ip}`, 20);
   if (!allowed) {
     return NextResponse.json({ error: "Rate limited" }, { status: 429 });
   }

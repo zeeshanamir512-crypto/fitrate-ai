@@ -231,7 +231,7 @@ async function blobsToPayload(request: Request): Promise<
 export async function POST(request: Request) {
   try {
     const ip = getClientIp(request.headers);
-    if (!checkRateLimit(ip, 6).allowed) {
+    if (!(await checkRateLimit(`compare:${ip}`, 6)).allowed) {
       return jsonPayload({ error: "Too many requests — please wait a moment and try again." }, 429);
     }
 

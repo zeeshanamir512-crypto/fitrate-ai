@@ -6,7 +6,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://fitrate-ai.vercel.ap
 
 export async function POST(request: Request) {
   const ip = getClientIp(new Headers(request.headers));
-  const { allowed } = checkRateLimit(`battle-create:${ip}`, 10);
+  const { allowed } = await checkRateLimit(`battle-create:${ip}`, 10);
   if (!allowed) {
     return NextResponse.json({ error: "Rate limited" }, { status: 429 });
   }

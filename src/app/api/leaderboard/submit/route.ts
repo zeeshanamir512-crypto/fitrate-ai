@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers);
-  if (!checkRateLimit(`lb-submit:${ip}`, 5).allowed) {
+  if (!(await checkRateLimit(`lb-submit:${ip}`, 5)).allowed) {
     return jsonPayload({ error: "Too many submissions — please wait a moment." }, 429);
   }
 

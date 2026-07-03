@@ -7,7 +7,7 @@ const IS_DEV = process.env.NODE_ENV === "development";
 
 export async function POST(request: Request) {
   const ip = getClientIp(new Headers(request.headers));
-  const { allowed } = checkRateLimit(`save:${ip}`, 10);
+  const { allowed } = await checkRateLimit(`save:${ip}`, 10);
   if (!allowed) {
     return NextResponse.json({ error: "Rate limited" }, { status: 429 });
   }

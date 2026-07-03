@@ -18,6 +18,7 @@ type AnalyzeRequestPayload = {
   imageDataUrl: string;
   occasion: OccasionMode;
   brutalMode: boolean;
+  autoDetectOccasion: boolean;
 };
 
 const outputFormatExample: AnalysisResult = {
@@ -664,6 +665,7 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
       const occasionRaw = String(formData.get("occasion") ?? "Casual");
       const occasion = OCCASIONS.includes(occasionRaw as OccasionMode) ? (occasionRaw as OccasionMode) : "Casual";
       const brutalMode = formData.get("brutalMode") === "1" || formData.get("brutalMode") === "true";
+      const autoDetectOccasion = formData.get("autoDetectOccasion") === "1" || formData.get("autoDetectOccasion") === "true";
       if (!(file instanceof Blob)) {
         return jsonPayload({ error: "Missing image file (expected field name: file)." }, 400);
       }
@@ -679,7 +681,8 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
       return {
         imageDataUrl: `data:${mime};base64,${base64}`,
         occasion,
-        brutalMode
+        brutalMode,
+        autoDetectOccasion
       };
     } catch (err) {
       console.error("Analyze multipart parse error:", err);
@@ -695,10 +698,12 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
       imageDataUrl?: string;
       occasion?: OccasionMode;
       brutalMode?: boolean;
+      autoDetectOccasion?: boolean;
     };
     const imageDataUrl = body?.imageDataUrl;
     const occasion = OCCASIONS.includes(body.occasion as OccasionMode) ? (body.occasion as OccasionMode) : "Casual";
     const brutalMode = Boolean(body?.brutalMode);
+    const autoDetectOccasion = Boolean(body?.autoDetectOccasion);
     if (!imageDataUrl || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/")) {
       return jsonPayload({ error: "Invalid image format. Use multipart upload or a data:image/… URL." }, 400);
     }
@@ -708,7 +713,8 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
     return {
       imageDataUrl,
       occasion,
-      brutalMode
+      brutalMode,
+      autoDetectOccasion
     };
   } catch {
     return jsonPayload({ error: "Invalid JSON body." }, 400);
@@ -718,7 +724,7 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
 export async function POST(request: Request) {
   try {
     const ip = getClientIp(request.headers);
-    if (!checkRateLimit(ip, 12).allowed) {
+    if (!(await checkRateLimit(`analyze:${ip}`, 12)).allowed) {
       return jsonPayload({ error: "Too many requests — please wait a moment and try again." }, 429);
     }
 
@@ -731,7 +737,7 @@ export async function POST(request: Request) {
     if (payloadOrError instanceof NextResponse) {
       return payloadOrError;
     }
-    const { imageDataUrl, occasion, brutalMode } = payloadOrError;
+    const { imageDataUrl, occasion, brutalMode, autoDetectOccasion } = payloadOrError;
 
     const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o";
     const client = new OpenAI({
@@ -739,6 +745,10 @@ export async function POST(request: Request) {
       timeout: 90_000,
       maxRetries: 0
     });
+
+    const occasionInstruction = autoDetectOccasion
+      ? `No occasion was provided by the user. FIRST decide the single most appropriate occasion for this outfit, chosen from EXACTLY this list: ${OCCASIONS.join(", ")}. Then judge the outfit for THAT occasion.`
+      : `You are judging the outfit for this exact occasion: "${occasion}".`;
 
     const prompt = `You are a premium personal stylist AI.
 
@@ -749,7 +759,7 @@ FIRST — before doing anything else — check whether the image contains a pers
 {"error":"no_outfit","message":"No outfit detected. Please upload a photo of yourself or someone wearing clothes."}
 - Otherwise proceed with the full analysis below.
 
-You are judging the outfit for this exact occasion: "${occasion}".
+${occasionInstruction}
 
 Step 1: identify visible outfit pieces first:
 - outerwear
@@ -783,9 +793,10 @@ Occasion-specific logic:
 - Do not frequently suggest tapered, slim-fit, or "slimmer pants" for Streetwear fixes; intentional baggy pants are valid—balance them with waist detail, cleaner shoe shapes, or a cropped outer layer instead.
 
 Return ONLY valid JSON (no markdown, no extra text) with this exact shape:
-${JSON.stringify(outputFormatExample)}
+${JSON.stringify({ ...outputFormatExample, detectedOccasion: occasion })}
 
 Rules:
+- detectedOccasion: REQUIRED. Exactly one value from this list — the occasion that best fits the outfit: ${OCCASIONS.join(", ")}
 - overallRating and all score fields must be integers 1 to 10
 - aiConfidence: optional integer 0-100 based on image clarity and outfit visibility
 - include "detectedItems" with outerwear, top, bottoms, shoes, accessories[], mainColors[], silhouette, styleVibe
@@ -856,9 +867,9 @@ Streetwear accessory & pants notes:
       return jsonPayload({ error: "No analysis returned from AI model." }, 502);
     }
 
-    let parsed: Partial<AnalysisResult> & { error?: string; message?: string };
+    let parsed: Partial<AnalysisResult> & { error?: string; message?: string; detectedOccasion?: string };
     try {
-      parsed = parseJsonFromModelText<Partial<AnalysisResult> & { error?: string; message?: string }>(outputText);
+      parsed = parseJsonFromModelText<Partial<AnalysisResult> & { error?: string; message?: string; detectedOccasion?: string }>(outputText);
     } catch {
       return jsonPayload({ error: "AI returned invalid JSON. Please try again." }, 502);
     }
@@ -867,15 +878,22 @@ Streetwear accessory & pants notes:
       return jsonPayload({ error: parsed.error, message: parsed.message }, 422);
     }
 
+    const detectedRaw = typeof parsed.detectedOccasion === "string" ? parsed.detectedOccasion.trim() : "";
+    const detectedOccasion: OccasionMode | null = OCCASIONS.includes(detectedRaw as OccasionMode)
+      ? (detectedRaw as OccasionMode)
+      : null;
+    // In auto mode the model judged for the occasion it detected, so sanitize against that.
+    const judgeOccasion: OccasionMode = autoDetectOccasion && detectedOccasion ? detectedOccasion : occasion;
+
     let result: AnalysisResult;
     try {
-      result = sanitizeResult(parsed, occasion);
+      result = sanitizeResult(parsed, judgeOccasion);
     } catch (sanitizeErr) {
       console.error("sanitizeResult error:", sanitizeErr);
       return jsonPayload({ error: "Could not finalize analysis. Please try again." }, 502);
     }
 
-    return jsonPayload({ result }, 200);
+    return jsonPayload({ result, detectedOccasion }, 200);
   } catch (error: unknown) {
     console.error("Analyze API error:", error);
     const { status, message } = errorMessageForUser(error);

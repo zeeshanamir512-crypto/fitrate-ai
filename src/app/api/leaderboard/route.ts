@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const ip = getClientIp(request.headers);
-  if (!checkRateLimit(`lb-read:${ip}`, 60).allowed) {
+  if (!(await checkRateLimit(`lb-read:${ip}`, 60)).allowed) {
     return jsonPayload({ error: "Too many requests" }, 429);
   }
 

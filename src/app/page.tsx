@@ -125,7 +125,7 @@ export default function Home() {
   const [streakJustIncreased, setStreakJustIncreased] = useState(false);
 
   const [aiDetectedOccasion, setAiDetectedOccasion] = useState<OccasionMode | null>(null);
-  const [isDetectingOccasion, setIsDetectingOccasion] = useState(false);
+  const [occasionManuallySet, setOccasionManuallySet] = useState(false);
 
   const [leaderboardSubmitting, setLeaderboardSubmitting] = useState(false);
   const [leaderboardSubmitted, setLeaderboardSubmitted] = useState(false);
@@ -191,52 +191,6 @@ export default function Home() {
     return () => window.clearTimeout(id);
   }, [compareResult]);
 
-  useEffect(() => {
-    if (!selectedFile) {
-      setAiDetectedOccasion(null);
-      setIsDetectingOccasion(false);
-      return;
-    }
-
-    let cancelled = false;
-    setAiDetectedOccasion(null);
-    setIsDetectingOccasion(true);
-
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 3000);
-
-    void (async () => {
-      try {
-        const formData = new FormData();
-        formData.set("file", selectedFile);
-        const response = await fetch("/api/detect-occasion", {
-          method: "POST",
-          body: formData,
-          signal: controller.signal,
-        });
-        if (cancelled || !response.ok) return;
-        const data = (await response.json()) as { occasion?: string };
-        if (cancelled) return;
-        const detected = data.occasion as OccasionMode | undefined;
-        if (detected) {
-          setOccasionMode(detected);
-          setAiDetectedOccasion(detected);
-        }
-      } catch {
-        // silently fall back — keep current selection
-      } finally {
-        window.clearTimeout(timeoutId);
-        if (!cancelled) setIsDetectingOccasion(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      setIsDetectingOccasion(false);
-    };
-  }, [selectedFile]);
-
   // Small helper: clean up previous blob preview when user picks another file.
   function clearPreviewBlob() {
     if (previewBlobRef.current) {
@@ -248,6 +202,7 @@ export default function Home() {
   function handleOccasionChange(val: OccasionMode) {
     setOccasionMode(val);
     setAiDetectedOccasion(null);
+    setOccasionManuallySet(true);
   }
 
   function switchAppMode(next: AppMode) {
@@ -422,6 +377,7 @@ export default function Home() {
       formData.set("file", selectedFile);
       formData.set("occasion", occasionMode);
       formData.set("brutalMode", brutalMode ? "1" : "0");
+      formData.set("autoDetectOccasion", occasionManuallySet ? "0" : "1");
 
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -429,7 +385,7 @@ export default function Home() {
         signal: controller.signal
       });
 
-      const parsed = await readApiJson<{ error?: string; message?: string; result?: AnalysisResult }>(response);
+      const parsed = await readApiJson<{ error?: string; message?: string; result?: AnalysisResult; detectedOccasion?: OccasionMode | null }>(response);
       if (!parsed.ok) {
         setErrorMessage(parsed.message);
         return;
@@ -453,6 +409,17 @@ export default function Home() {
       setResult(data.result);
       setResultRevealKey((k) => k + 1);
 
+      // If the user never touched the dropdown, adopt the AI-detected occasion (from the
+      // same analyze call) for display + history. Otherwise respect their manual choice.
+      const detected = data.detectedOccasion ?? null;
+      const effectiveOccasion: OccasionMode = !occasionManuallySet && detected ? detected : occasionMode;
+      if (!occasionManuallySet && detected) {
+        setOccasionMode(detected);
+        setAiDetectedOccasion(detected);
+      } else {
+        setAiDetectedOccasion(null);
+      }
+
       const { count, increased } = updateStreak();
       setStreak(count);
       if (increased) {
@@ -466,7 +433,7 @@ export default function Home() {
         const sanitizedBadges = sanitizeFashionBadges(data.result!.fashionBadges);
         const updated = addToFitHistory(loadFitHistory(), {
           score: data.result!.overallRating,
-          occasion: occasionMode,
+          occasion: effectiveOccasion,
           badges: sanitizedBadges.length > 0 ? sanitizedBadges : inferFashionBadges(data.result!).slice(0, 2),
           styleIdentity: data.result!.styleIdentity,
           thumbnail: thumb,
@@ -855,11 +822,8 @@ export default function Home() {
 
           <label htmlFor="occasion" className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
             Occasion mode
-            {isDetectingOccasion && (
-              <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-slate-600 border-t-indigo-400" aria-hidden />
-            )}
           </label>
-          <OccasionSelect id="occasion" value={occasionMode} onChange={handleOccasionChange} disabled={isDetectingOccasion} />
+          <OccasionSelect id="occasion" value={occasionMode} onChange={handleOccasionChange} />
           {aiDetectedOccasion && (
             <p className="-mt-4 mb-4 flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-indigo-400/85">
               ✨ AI detected: <span className="font-semibold text-indigo-300">{aiDetectedOccasion}</span>
