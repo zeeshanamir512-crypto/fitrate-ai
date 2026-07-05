@@ -79,6 +79,15 @@ const outputFormatExample: AnalysisResult = {
     "Avoid sneakers that look too bulky compared to how your pants hang",
     "Avoid overly bulky top layers with zero structure around the neckline or waist"
   ],
+  fitCorrections: [
+    "Hem the cargos ~2cm — they're pooling too much over the sneakers",
+    "Size down the hoodie a touch to sharpen the shoulder line"
+  ],
+  stylingIdeas: [
+    "Push the hoodie sleeves up and flip the cap backwards for a looser look",
+    "Tuck the front hem of the hoodie into the cargos to define the waist",
+    "Swap the white sneakers for boots to dress this same fit up"
+  ],
   styleKeywords: ["smart casual", "minimal", "clean", "balanced"],
   fashionBadges: ["Clean Minimalist", "Streetwear King"]
 };
@@ -97,6 +106,15 @@ function clampPercent(value: unknown): number {
 function normalizeDifficulty(value: unknown): Difficulty {
   if (value === "Easy" || value === "Medium" || value === "Hard") return value;
   return "Easy";
+}
+
+function sanitizeStringList(value: unknown, cap: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v) => typeof v === "string")
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .slice(0, cap);
 }
 
 function hasAnySignal(text: string, signals: string[]): boolean {
@@ -331,6 +349,8 @@ function sanitizeResult(data: Partial<AnalysisResult>, selectedOccasion: Occasio
         : outputFormatExample.upgradeIdeas,
     dos: Array.isArray(data.dos) ? data.dos.slice(0, 5).map(String) : outputFormatExample.dos,
     donts: Array.isArray(data.donts) ? data.donts.slice(0, 5).map(String) : outputFormatExample.donts,
+    fitCorrections: sanitizeStringList(data.fitCorrections, 3),
+    stylingIdeas: sanitizeStringList(data.stylingIdeas, 3),
     styleKeywords: Array.isArray(data.styleKeywords) ? data.styleKeywords.slice(0, 8).map(String) : ["clean"],
     fashionBadges: []
   };
@@ -809,6 +829,8 @@ Rules:
 - dos: 3 to 5 short bullet-style strings
 - donts: 3 to 5 short bullet-style strings
 - donts must reference actual visible pieces/problems and stay action-specific (avoid contradicting cohesive casual/street setups). Good patterns: avoiding extra unrelated accessories atop an already-balanced stack, chunky sneakers overpowering trousers, unstructured bulky tops.
+- fitCorrections: 0 to 3 items, each a SHORT concrete alteration or sizing fix (max ~15 words). Only real fit problems visible in THIS photo — hem length, sleeve length, shoulder fit, taper, break over the shoe, tucking, sizing up/down. Name the specific garment. If the fit is already clean, return an empty array [] — never invent a problem. No vague style opinions, no repeating scores.
+- stylingIdeas: 2 to 3 items, each a SHORT idea (max ~15 words) for restyling THIS exact outfit. MOST ideas must restyle pieces ALREADY visible — tuck, untuck, roll sleeves, layer open, flip the cap, push sleeves up, dress it up/down. At MOST ONE idea may swap a single visible piece for a different one (e.g. "swap the sneakers for boots") to shift the vibe. Must reference ACTUAL detected items by name. Do NOT pile on several new items or give generic advice that could apply to any outfit.
 - styleKeywords: 4 to 7 tags
 - fashionBadges: 1 to 3 strings chosen ONLY from this exact list (no other names): ${JSON.stringify([...FASHION_BADGE_IDS])}`;
 
@@ -854,7 +876,7 @@ Streetwear accessory & pants notes:
             { type: "text", text: `${prompt}${brutalModeAddendum}${streetwearScoringAddendum}` },
             {
               type: "image_url",
-              image_url: { url: imageDataUrl, detail: "low" }
+              image_url: { url: imageDataUrl, detail: "high" }
             }
           ]
         }

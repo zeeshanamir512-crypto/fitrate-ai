@@ -159,6 +159,44 @@ export default async function ResultPage({ params }: Props) {
             </p>
           </div>
 
+          {/* Fit Fixes */}
+          {result.fitCorrections && result.fitCorrections.length > 0 && (
+            <div className="relative mb-6 rounded-2xl border border-amber-400/18 bg-amber-500/[0.05] px-5 py-4 ring-1 ring-amber-400/10">
+              <p className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-300/80">
+                <span aria-hidden>🔧</span> Fit Fixes
+              </p>
+              <ul className="space-y-2 text-sm leading-relaxed text-slate-200">
+                {result.fitCorrections.map((item, i) => (
+                  <li key={`fit-${i}`} className="flex gap-2">
+                    <span aria-hidden className="text-amber-300/70">
+                      •
+                    </span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Style It Differently */}
+          {result.stylingIdeas && result.stylingIdeas.length > 0 && (
+            <div className="relative mb-8 rounded-2xl border border-violet-400/18 bg-violet-500/[0.05] px-5 py-4 ring-1 ring-violet-400/10">
+              <p className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-300/80">
+                <span aria-hidden>🧥</span> Style It Differently
+              </p>
+              <ul className="space-y-2 text-sm leading-relaxed text-slate-200">
+                {result.stylingIdeas.map((item, i) => (
+                  <li key={`style-${i}`} className="flex gap-2">
+                    <span aria-hidden className="text-violet-300/70">
+                      •
+                    </span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* CTAs */}
           <div className="relative space-y-2.5">
             <Link

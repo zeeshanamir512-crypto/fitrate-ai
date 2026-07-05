@@ -1323,6 +1323,42 @@ export default function Home() {
               </ul>
             </article>
           </div>
+
+          {((result.fitCorrections?.length ?? 0) > 0 || (result.stylingIdeas?.length ?? 0) > 0) && (
+            <div className="grid gap-6 md:grid-cols-2">
+              {result.fitCorrections && result.fitCorrections.length > 0 && (
+                <article className="w-full min-w-0 rounded-3xl border border-amber-400/20 bg-amber-950/25 p-4 shadow-lg ring-1 ring-amber-400/15 backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 sm:p-8">
+                  <h3 className="flex items-center gap-2 text-lg font-semibold text-amber-100">
+                    <span aria-hidden>🔧</span> Fit Fixes
+                  </h3>
+                  <ul className="mt-4 space-y-2.5 text-sm leading-relaxed text-amber-50/95">
+                    {result.fitCorrections.map((item, index) => (
+                      <li key={`fit-${index}-${item}`} className="flex gap-2">
+                        <span aria-hidden>•</span>
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              )}
+
+              {result.stylingIdeas && result.stylingIdeas.length > 0 && (
+                <article className="w-full min-w-0 rounded-3xl border border-violet-400/20 bg-violet-950/30 p-4 shadow-lg ring-1 ring-violet-400/15 backdrop-blur-lg transition duration-200 hover:-translate-y-0.5 sm:p-8">
+                  <h3 className="flex items-center gap-2 text-lg font-semibold text-violet-100">
+                    <span aria-hidden>🧥</span> Style It Differently
+                  </h3>
+                  <ul className="mt-4 space-y-2.5 text-sm leading-relaxed text-violet-50/95">
+                    {result.stylingIdeas.map((item, index) => (
+                      <li key={`style-${index}-${item}`} className="flex gap-2">
+                        <span aria-hidden>•</span>
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              )}
+            </div>
+          )}
         </section>
       )}
 

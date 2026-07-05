@@ -37,6 +37,8 @@ export type AnalysisResult = {
   upgradeIdeas: { title: string; description: string; difficulty: Difficulty }[];
   dos: string[];
   donts: string[];
+  fitCorrections?: string[];
+  stylingIdeas?: string[];
   styleKeywords: string[];
   fashionBadges: string[];
 };
