@@ -89,7 +89,9 @@ export async function incrementVote(
   try {
     const redis = getRedis();
     const key = side === "a" ? `battle:${id}:va` : `battle:${id}:vb`;
-    await redis.incr(key);
+    // INCR alone never sets a TTL, so vote counters used to outlive their 30-day
+    // battle forever. Refresh the expiry on each vote to match the battle's lifetime.
+    await redis.pipeline().incr(key).expire(key, TTL_SECONDS).exec();
     return getBattleVotes(id);
   } catch {
     return getBattleVotes(id);

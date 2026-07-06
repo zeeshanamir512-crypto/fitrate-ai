@@ -14,6 +14,7 @@ type CardFormat = "post" | "story";
 
 type ShareableResultCardProps = {
   result: AnalysisResult;
+  resultToken: string | null;
   badges: FashionBadgeId[];
   occasion: string;
   outfitPreviewUrl: string | null;
@@ -92,7 +93,7 @@ function ShareCardProgressBars({ result }: { result: AnalysisResult }) {
 
 export const ShareableResultCard = forwardRef<HTMLDivElement, ShareableResultCardProps>(
   function ShareableResultCard(
-    { result, badges, occasion, outfitPreviewUrl, brutalMode, onDownload, downloadLoading, downloadError },
+    { result, resultToken, badges, occasion, outfitPreviewUrl, brutalMode, onDownload, downloadLoading, downloadError },
     ref
   ) {
     const [copyStatus, setCopyStatus] = useState<"idle" | "ok" | "err">("idle");
@@ -125,7 +126,7 @@ export const ShareableResultCard = forwardRef<HTMLDivElement, ShareableResultCar
         const res = await fetch("/api/save-result", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ result, occasion }),
+          body: JSON.stringify({ result, occasion, token: resultToken }),
         });
         if (!res.ok) throw new Error("save failed");
         const data = (await res.json()) as { url: string };

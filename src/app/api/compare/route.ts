@@ -4,13 +4,14 @@ import { NextResponse } from "next/server";
 import { jsonPayload } from "@/lib/jsonResponse";
 import { getOpenAiApiKey, OPENAI_API_KEY_SETUP_ERROR } from "@/lib/openaiApiKey";
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
-import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { checkDailyCallCap, checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { OCCASIONS, type OccasionMode } from "@/lib/occasions";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type OccasionMode = "Casual" | "School" | "Date" | "Gym" | "Party" | "Streetwear" | "Smart casual";
+const DAILY_CALL_CAP = Number(process.env.DAILY_CALL_LIMIT) || 500;
 
 type OutfitCompareResult = {
   scoreA: number;
@@ -24,7 +25,6 @@ type OutfitCompareResult = {
 };
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
-const OCCASIONS: OccasionMode[] = ["Casual", "School", "Date", "Gym", "Party", "Streetwear", "Smart casual"];
 
 const outputExample: OutfitCompareResult = {
   scoreA: 8,
@@ -231,8 +231,11 @@ async function blobsToPayload(request: Request): Promise<
 export async function POST(request: Request) {
   try {
     const ip = getClientIp(request.headers);
-    if (!(await checkRateLimit(`compare:${ip}`, 6)).allowed) {
+    if (!(await checkRateLimit(`compare:${ip}`, 6, 60, { failClosed: true })).allowed) {
       return jsonPayload({ error: "Too many requests — please wait a moment and try again." }, 429);
+    }
+    if (!(await checkDailyCallCap(DAILY_CALL_CAP)).allowed) {
+      return jsonPayload({ error: "FitRate is handling a lot of requests right now — please try again later." }, 429);
     }
 
     const apiKey = getOpenAiApiKey();

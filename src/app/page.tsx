@@ -87,6 +87,7 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [resultToken, setResultToken] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPreparingImage, setIsPreparingImage] = useState(false);
 
@@ -368,6 +369,7 @@ export default function Home() {
     setIsAnalyzing(true);
     setErrorMessage(null);
     setResult(null);
+    setResultToken(null);
 
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 95_000);
@@ -385,7 +387,7 @@ export default function Home() {
         signal: controller.signal
       });
 
-      const parsed = await readApiJson<{ error?: string; message?: string; result?: AnalysisResult; detectedOccasion?: OccasionMode | null }>(response);
+      const parsed = await readApiJson<{ error?: string; message?: string; result?: AnalysisResult; detectedOccasion?: OccasionMode | null; token?: string }>(response);
       if (!parsed.ok) {
         setErrorMessage(parsed.message);
         return;
@@ -407,6 +409,7 @@ export default function Home() {
       }
 
       setResult(data.result);
+      setResultToken(data.token ?? null);
       setResultRevealKey((k) => k + 1);
 
       // If the user never touched the dropdown, adopt the AI-detected occasion (from the
@@ -543,7 +546,7 @@ export default function Home() {
       const res = await fetch("/api/save-result", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ result, occasion: occasionMode, ...(thumbnailUrl ? { thumbnailUrl } : {}) }),
+        body: JSON.stringify({ result, occasion: occasionMode, token: resultToken, ...(thumbnailUrl ? { thumbnailUrl } : {}) }),
       });
       const data = (await res.json()) as { id?: string; error?: string };
       if (res.ok && data.id) {
@@ -566,7 +569,7 @@ export default function Home() {
       const saveRes = await fetch("/api/save-result", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ result, occasion: occasionMode, ...(thumbnailUrl ? { thumbnailUrl } : {}) }),
+        body: JSON.stringify({ result, occasion: occasionMode, token: resultToken, ...(thumbnailUrl ? { thumbnailUrl } : {}) }),
       });
       const saveData = (await saveRes.json()) as { id?: string; error?: string };
       if (!saveRes.ok || !saveData.id) return;
@@ -1160,6 +1163,7 @@ export default function Home() {
             <ShareableResultCard
               ref={shareCardRef}
               result={result}
+              resultToken={resultToken}
               badges={displayBadges}
               occasion={occasionMode}
               outfitPreviewUrl={previewUrl}

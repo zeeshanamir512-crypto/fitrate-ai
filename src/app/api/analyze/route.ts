@@ -5,14 +5,16 @@ import { FASHION_BADGE_IDS, inferFashionBadges, sanitizeFashionBadges } from "@/
 import { jsonPayload } from "@/lib/jsonResponse";
 import { getOpenAiApiKey, OPENAI_API_KEY_SETUP_ERROR } from "@/lib/openaiApiKey";
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
-import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { checkDailyCallCap, checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { signResult } from "@/lib/resultSignature";
+import { OCCASIONS, type OccasionMode } from "@/lib/occasions";
 import type { AnalysisResult, Difficulty } from "@/types/analysis";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type OccasionMode = "Casual" | "School" | "Date" | "Gym" | "Party" | "Streetwear" | "Smart casual" | "Business" | "Festival" | "Beach";
+const DAILY_CALL_CAP = Number(process.env.DAILY_CALL_LIMIT) || 500;
 
 type AnalyzeRequestPayload = {
   imageDataUrl: string;
@@ -93,14 +95,15 @@ const outputFormatExample: AnalysisResult = {
 };
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // keep requests small and fast
-const OCCASIONS: OccasionMode[] = ["Casual", "School", "Date", "Gym", "Party", "Streetwear", "Smart casual", "Business", "Festival", "Beach"];
 
 function clampScore(value: unknown): number {
-  return Math.min(10, Math.max(1, Number(value ?? 7)));
+  const n = Number(value ?? 7);
+  return Math.min(10, Math.max(1, Number.isFinite(n) ? n : 7));
 }
 
 function clampPercent(value: unknown): number {
-  return Math.min(100, Math.max(0, Number(value ?? 80)));
+  const n = Number(value ?? 80);
+  return Math.min(100, Math.max(0, Number.isFinite(n) ? n : 80));
 }
 
 function normalizeDifficulty(value: unknown): Difficulty {
@@ -744,8 +747,11 @@ async function getImageDataUrl(request: Request): Promise<AnalyzeRequestPayload 
 export async function POST(request: Request) {
   try {
     const ip = getClientIp(request.headers);
-    if (!(await checkRateLimit(`analyze:${ip}`, 12)).allowed) {
+    if (!(await checkRateLimit(`analyze:${ip}`, 12, 60, { failClosed: true })).allowed) {
       return jsonPayload({ error: "Too many requests — please wait a moment and try again." }, 429);
+    }
+    if (!(await checkDailyCallCap(DAILY_CALL_CAP)).allowed) {
+      return jsonPayload({ error: "FitRate is handling a lot of requests right now — please try again later." }, 429);
     }
 
     const apiKey = getOpenAiApiKey();
@@ -915,7 +921,11 @@ Streetwear accessory & pants notes:
       return jsonPayload({ error: "Could not finalize analysis. Please try again." }, 502);
     }
 
-    return jsonPayload({ result, detectedOccasion }, 200);
+    // Sign the finalized result so /api/save-result can verify it came from a real
+    // analyze call rather than being fabricated by a client.
+    const token = signResult(result);
+
+    return jsonPayload({ result, detectedOccasion, token }, 200);
   } catch (error: unknown) {
     console.error("Analyze API error:", error);
     const { status, message } = errorMessageForUser(error);
