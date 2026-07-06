@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { jsonPayload } from "@/lib/jsonResponse";
 import { getOpenAiApiKey, OPENAI_API_KEY_SETUP_ERROR } from "@/lib/openaiApiKey";
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
+import { FLAGGED_IMAGE_MESSAGE, MODERATION_UNAVAILABLE_MESSAGE, moderateImage } from "@/lib/moderation";
 import { checkDailyCallCap, checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { OCCASIONS, type OccasionMode } from "@/lib/occasions";
 
@@ -246,6 +247,19 @@ export async function POST(request: Request) {
     const payload = await blobsToPayload(request);
     if (payload instanceof NextResponse) return payload;
     const { imageAUrl, imageBUrl, occasion } = payload;
+
+    // Screen both images (in parallel) before the paid vision call; fail closed on
+    // moderation errors — same safety-gate reasoning as /api/analyze.
+    const verdicts = await Promise.all([moderateImage(apiKey, imageAUrl), moderateImage(apiKey, imageBUrl)]);
+    for (const verdict of verdicts) {
+      if (!verdict.ok && verdict.reason === "flagged") {
+        console.warn("[compare] image rejected by moderation:", verdict.categories.join(", "));
+        return jsonPayload({ error: FLAGGED_IMAGE_MESSAGE }, 422);
+      }
+    }
+    if (verdicts.some((v) => !v.ok)) {
+      return jsonPayload({ error: MODERATION_UNAVAILABLE_MESSAGE }, 503);
+    }
 
     const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o";
     const client = new OpenAI({

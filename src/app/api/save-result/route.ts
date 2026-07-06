@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { saveSharedResult } from "@/lib/resultStore";
+import { FLAGGED_IMAGE_MESSAGE, moderateImage } from "@/lib/moderation";
+import { getOpenAiApiKey } from "@/lib/openaiApiKey";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { verifyResultToken } from "@/lib/resultSignature";
 import { isOccasion } from "@/lib/occasions";
@@ -54,12 +56,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid occasion" }, { status: 400 });
   }
 
-  const thumbnailUrl =
+  let thumbnailUrl =
     typeof body.thumbnailUrl === "string" &&
     body.thumbnailUrl.startsWith("data:image/jpeg;base64,") &&
     body.thumbnailUrl.length <= 51200
       ? body.thumbnailUrl
       : undefined;
+
+  // The thumbnail is the ONLY user image that becomes public (leaderboard, battle
+  // cards), and it's client-generated — NOT covered by the HMAC token. Moderate it
+  // before it can be published. Flagged → reject outright; moderation outage → keep
+  // the (server-signed, safe) text result but drop the unscreened image.
+  if (thumbnailUrl) {
+    const apiKey = getOpenAiApiKey();
+    const verdict = apiKey ? await moderateImage(apiKey, thumbnailUrl) : ({ ok: false, reason: "error" } as const);
+    if (!verdict.ok) {
+      if (verdict.reason === "flagged") {
+        console.warn("[save-result] thumbnail rejected by moderation:", verdict.categories.join(", "));
+        return NextResponse.json({ error: FLAGGED_IMAGE_MESSAGE }, { status: 422 });
+      }
+      console.warn("[save-result] thumbnail moderation unavailable — saving without thumbnail");
+      thumbnailUrl = undefined;
+    }
+  }
 
   const saved = await saveSharedResult({
     result: body.result,

@@ -5,6 +5,7 @@ import { FASHION_BADGE_IDS, inferFashionBadges, sanitizeFashionBadges } from "@/
 import { jsonPayload } from "@/lib/jsonResponse";
 import { getOpenAiApiKey, OPENAI_API_KEY_SETUP_ERROR } from "@/lib/openaiApiKey";
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
+import { FLAGGED_IMAGE_MESSAGE, MODERATION_UNAVAILABLE_MESSAGE, moderateImage } from "@/lib/moderation";
 import { checkDailyCallCap, checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { signResult } from "@/lib/resultSignature";
 import { OCCASIONS, type OccasionMode } from "@/lib/occasions";
@@ -764,6 +765,18 @@ export async function POST(request: Request) {
       return payloadOrError;
     }
     const { imageDataUrl, occasion, brutalMode, autoDetectOccasion } = payloadOrError;
+
+    // Screen the image before it reaches the paid vision call. Fail CLOSED on
+    // moderation errors: this is a safety/legal gate, and moderation shares a
+    // provider with the vision call, so an outage here dooms the analysis anyway.
+    const moderation = await moderateImage(apiKey, imageDataUrl);
+    if (!moderation.ok) {
+      if (moderation.reason === "flagged") {
+        console.warn("[analyze] image rejected by moderation:", moderation.categories.join(", "));
+        return jsonPayload({ error: FLAGGED_IMAGE_MESSAGE }, 422);
+      }
+      return jsonPayload({ error: MODERATION_UNAVAILABLE_MESSAGE }, 503);
+    }
 
     const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o";
     const client = new OpenAI({
