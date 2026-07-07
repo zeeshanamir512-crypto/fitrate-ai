@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { getSharedResult } from "@/lib/resultStore";
 import { SCORE_BREAKDOWN_KEYS } from "@/types/analysis";
 import { LeaderboardSubmitButton } from "@/components/LeaderboardSubmitButton";
+import { StartBattleButton } from "@/components/StartBattleButton";
 
 export const dynamic = "force-dynamic";
 
@@ -205,12 +206,7 @@ export default async function ResultPage({ params }: Props) {
             >
               Can you beat this score?
             </Link>
-            <Link
-              href={`/battle/new?a=${data.id}`}
-              className="block w-full rounded-xl border border-violet-400/30 bg-gradient-to-r from-violet-600/15 via-indigo-600/15 to-violet-600/15 px-4 py-3.5 text-center text-sm font-bold text-violet-200 ring-1 ring-violet-400/20 transition hover:border-violet-400/50 hover:text-white active:scale-[0.98]"
-            >
-              ⚔ Start a Battle
-            </Link>
+            <StartBattleButton resultId={data.id} />
             <LeaderboardSubmitButton resultId={data.id} />
             <Link
               href="/"

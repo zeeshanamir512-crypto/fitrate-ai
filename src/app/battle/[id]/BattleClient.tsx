@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { BattleEntry, BattleVotes } from "@/lib/battleStore";
 import type { SharedResult } from "@/lib/resultStore";
+import JoinBattlePanel from "./JoinBattlePanel";
 
 type Props = {
   battle: BattleEntry;
@@ -35,6 +37,7 @@ function OutfitCard({
   voteResult,
   onVote,
   voting,
+  votingOpen,
 }: {
   result: SharedResult;
   side: "a" | "b";
@@ -44,6 +47,8 @@ function OutfitCard({
   voteResult: VoteResult | null;
   onVote: () => void;
   voting: boolean;
+  /** false while the battle is still waiting for a challenger — no vote button. */
+  votingOpen: boolean;
 }) {
   const pct = voteResult
     ? side === "a"
@@ -144,7 +149,11 @@ function OutfitCard({
         </div>
 
         {/* Vote area */}
-        {!voted ? (
+        {!votingOpen ? (
+          <p className="rounded-xl border border-white/[0.07] bg-slate-950/60 px-4 py-3 text-center text-xs font-semibold text-slate-500 ring-1 ring-white/[0.04]">
+            Voting opens when a challenger joins
+          </p>
+        ) : !voted ? (
           <button
             type="button"
             onClick={onVote}
@@ -182,11 +191,25 @@ function OutfitCard({
 }
 
 export default function BattleClient({ battle, initialVotes }: Props) {
+  const router = useRouter();
+  const isOpen = !battle.resultB;
+
   const [voted, setVoted] = useState(false);
   const [voting, setVoting] = useState(false);
   const [voteResult, setVoteResult] = useState<VoteResult | null>(null);
   const [winner, setWinner] = useState<"a" | "b" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopyLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable — ignore
+    }
+  }
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY(battle.id));
@@ -204,7 +227,7 @@ export default function BattleClient({ battle, initialVotes }: Props) {
   }, [battle.id, initialVotes]);
 
   async function handleVote(side: "a" | "b") {
-    if (voted || voting) return;
+    if (isOpen || voted || voting) return;
     setVoting(true);
     setError(null);
     try {
@@ -230,6 +253,23 @@ export default function BattleClient({ battle, initialVotes }: Props) {
 
   return (
     <div className="space-y-8">
+      {/* Open-battle banner: share CTA while waiting for a challenger */}
+      {isOpen && (
+        <div className="relative overflow-hidden rounded-2xl border border-violet-400/25 bg-violet-500/[0.07] p-5 text-center ring-1 ring-violet-400/15">
+          <p className="text-sm font-bold text-violet-200">Waiting for a challenger — share this link!</p>
+          <p className="mt-1 text-xs text-slate-400">
+            First person to upload their fit becomes Outfit B. Voting opens once they join.
+          </p>
+          <button
+            type="button"
+            onClick={handleCopyLink}
+            className="mt-3 rounded-lg border border-violet-400/30 bg-violet-500/10 px-4 py-2 text-xs font-semibold text-violet-200 transition hover:bg-violet-500/20"
+          >
+            {copied ? "Copied!" : "Copy battle link"}
+          </button>
+        </div>
+      )}
+
       {/* VS header */}
       <div className="relative flex items-center gap-4">
         <div className="h-px flex-1 bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
@@ -239,7 +279,7 @@ export default function BattleClient({ battle, initialVotes }: Props) {
         <div className="h-px flex-1 bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
       </div>
 
-      {/* Two outfit cards */}
+      {/* Two outfit cards (or one card + the open join slot) */}
       <div className="grid gap-4 lg:grid-cols-2">
         <OutfitCard
           result={battle.resultA}
@@ -250,17 +290,23 @@ export default function BattleClient({ battle, initialVotes }: Props) {
           voteResult={voteResult}
           onVote={() => handleVote("a")}
           voting={voting}
+          votingOpen={!isOpen}
         />
-        <OutfitCard
-          result={battle.resultB}
-          side="b"
-          label="Outfit B"
-          voted={voted}
-          winner={winner}
-          voteResult={voteResult}
-          onVote={() => handleVote("b")}
-          voting={voting}
-        />
+        {battle.resultB ? (
+          <OutfitCard
+            result={battle.resultB}
+            side="b"
+            label="Outfit B"
+            voted={voted}
+            winner={winner}
+            voteResult={voteResult}
+            onVote={() => handleVote("b")}
+            voting={voting}
+            votingOpen
+          />
+        ) : (
+          <JoinBattlePanel battleId={battle.id} onJoined={() => router.refresh()} />
+        )}
       </div>
 
       {error && (

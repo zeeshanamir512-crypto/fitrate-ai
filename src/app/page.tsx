@@ -105,6 +105,7 @@ export default function Home() {
   const [shareCardExportLoading, setShareCardExportLoading] = useState(false);
   const [shareCardExportError, setShareCardExportError] = useState<string | null>(null);
   const [battleLoading, setBattleLoading] = useState(false);
+  const [battleError, setBattleError] = useState<string | null>(null);
 
   const [compareShareCardPreviewVisible, setCompareShareCardPreviewVisible] = useState(false);
   const [compareShareCardExportLoading, setCompareShareCardExportLoading] = useState(false);
@@ -538,6 +539,7 @@ export default function Home() {
   async function handleStartBattle() {
     if (!result || battleLoading) return;
     setBattleLoading(true);
+    setBattleError(null);
     try {
       let thumbnailUrl: string | undefined;
       if (previewUrl) {
@@ -549,11 +551,26 @@ export default function Home() {
         body: JSON.stringify({ result, occasion: occasionMode, token: resultToken, ...(thumbnailUrl ? { thumbnailUrl } : {}) }),
       });
       const data = (await res.json()) as { id?: string; error?: string };
-      if (res.ok && data.id) {
-        window.location.href = `/battle/new?a=${data.id}`;
+      if (!res.ok || !data.id) {
+        setBattleError(data.error ?? "Could not save your result. Please try again.");
+        return;
       }
+
+      // One-link battles: create an open battle from this result and go straight
+      // to its shareable page — no second outfit needed up front.
+      const battleRes = await fetch("/api/battle/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idA: data.id }),
+      });
+      const battleData = (await battleRes.json()) as { id?: string; error?: string };
+      if (!battleRes.ok || !battleData.id) {
+        setBattleError(battleData.error ?? "Could not create the battle. Please try again.");
+        return;
+      }
+      window.location.href = `/battle/${battleData.id}`;
     } catch {
-      // silently fail — button just stops loading
+      setBattleError("Could not start the battle. Check your connection and try again.");
     } finally {
       setBattleLoading(false);
     }
@@ -1189,6 +1206,7 @@ export default function Home() {
                   "⚔ Start a Battle"
                 )}
               </button>
+              {battleError && <p className="text-center text-xs text-rose-300">{battleError}</p>}
               <button
                 type="button"
                 onClick={handleSubmitToLeaderboard}

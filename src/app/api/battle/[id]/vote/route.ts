@@ -28,6 +28,12 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Battle not found" }, { status: 404 });
   }
 
+  // Open battles (no challenger yet) can't be voted on — the UI disables the
+  // buttons, but enforce it server-side too.
+  if (!battle.resultB) {
+    return NextResponse.json({ error: "This battle hasn't started yet — waiting for a challenger" }, { status: 409 });
+  }
+
   const votes = await incrementVote(id, body.side);
   const total = votes.a + votes.b;
   return NextResponse.json({

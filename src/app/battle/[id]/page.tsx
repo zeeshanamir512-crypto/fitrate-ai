@@ -16,9 +16,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!battle) return { title: "Battle not found | FitRate AI" };
 
   const scoreA = battle.resultA.result.overallRating;
-  const scoreB = battle.resultB.result.overallRating;
-  const title = `Outfit Battle: ${scoreA}/10 vs ${scoreB}/10 | FitRate AI`;
-  const description = `${battle.resultA.result.styleIdentity} vs ${battle.resultB.result.styleIdentity} — Vote for the best outfit!`;
+  // Open battle (no challenger yet): lean into the challenge for shared links.
+  const title = battle.resultB
+    ? `Outfit Battle: ${scoreA}/10 vs ${battle.resultB.result.overallRating}/10 | FitRate AI`
+    : `Outfit Battle: ${scoreA}/10 vs ? | FitRate AI`;
+  const description = battle.resultB
+    ? `${battle.resultA.result.styleIdentity} vs ${battle.resultB.result.styleIdentity} — Vote for the best outfit!`
+    : `${battle.resultA.result.styleIdentity} is waiting for a challenger — think you can beat this fit?`;
 
   return {
     title,
@@ -47,7 +51,7 @@ export default async function BattlePage({ params }: Props) {
   if (!battle) notFound();
 
   const scoreA = battle.resultA.result.overallRating;
-  const scoreB = battle.resultB.result.overallRating;
+  const scoreB = battle.resultB?.result.overallRating ?? null;
 
   return (
     <main className="min-h-screen bg-[#030712] px-4 py-12 sm:py-16">
@@ -76,8 +80,8 @@ export default async function BattlePage({ params }: Props) {
           <p className="mt-2 text-sm text-slate-400">
             <span className="font-semibold text-indigo-300">{scoreA}/10</span>
             {" "}vs{" "}
-            <span className="font-semibold text-violet-300">{scoreB}/10</span>
-            {" "}— Vote for the better fit
+            <span className="font-semibold text-violet-300">{scoreB !== null ? `${scoreB}/10` : "?"}</span>
+            {" "}— {scoreB !== null ? "Vote for the better fit" : "Waiting for a challenger"}
           </p>
         </div>
 
