@@ -131,6 +131,31 @@ function matchesAny(haystack: string, needles: string[]): boolean {
   return needles.some((needle) => lower.includes(needle));
 }
 
+/**
+ * Style words that mark an outfit as belonging to the relaxed/streetwear lane.
+ * Shared by the accessory-score floor and the streetwear occasion floor
+ * (which historically carried separate but identical copies of this list).
+ */
+const STREETWEAR_STYLE_SIGNALS = [
+  "streetwear",
+  "oversized",
+  "baggy",
+  "relaxed",
+  "casual",
+  "skater",
+  "urban",
+  "layered",
+  "sporty"
+];
+
+/**
+ * WHY: several compensations below raise accessory-related scores or soften
+ * accessory criticism, but they must NOT fire when the model reports a real
+ * accessory clash. This detects genuine clash language in the model's text so
+ * those compensations stay conservative. The "too many accessories" phrasings
+ * only count as clash evidence at 6+ detected accessories — below that, the
+ * model is usually just over-penalizing a normal stack.
+ */
 function hasAccessoryClashEvidence(context: string, accessoryCount: number): boolean {
   const lower = context.toLowerCase();
   const hardSignals = [
@@ -158,6 +183,11 @@ function hasAccessoryClashEvidence(context: string, accessoryCount: number): boo
   return false;
 }
 
+/**
+ * WHY: cap + chain + headphones is the canonical casual/streetwear accessory
+ * stack, and the one the model most often mislabels as "too many accessories".
+ * The ≤4 cap keeps this from matching genuinely crowded looks.
+ */
 function hasCapChainHeadphoneTrio(accessories: string[]): boolean {
   if (accessories.length === 0) return false;
   const blob = accessories.map((a) => a.toLowerCase()).join(" ");
@@ -167,6 +197,11 @@ function hasCapChainHeadphoneTrio(accessories: string[]): boolean {
   return hasHead && hasChain && hasPhones && accessories.length <= 4;
 }
 
+/**
+ * WHY: guards against the model's favorite generic tip — "add white/contrast
+ * sneakers" — when the detected shoes are already white or light-toned.
+ * Phrases like "triple white" / "all white" are covered by the "white" hint.
+ */
 function shoesAppearWhiteOrLight(shoesDesc: string): boolean {
   const shoeLower = shoesDesc.toLowerCase();
   const looksDarkFootwear =
@@ -186,7 +221,7 @@ function shoesAppearWhiteOrLight(shoesDesc: string): boolean {
     "light grey",
     "light gray"
   ];
-  const looksLight = lightHints.some((w) => shoeLower.includes(w)) || /\btriple white\b|\b(all white)\b/i.test(shoeLower);
+  const looksLight = lightHints.some((w) => shoeLower.includes(w));
   const lightGreySneakers =
     /\b(sneaker|trainer|footwear)\b/.test(shoeLower) &&
     /\b(light|silver|dust|cloud|ash|steel)\b/.test(shoeLower) &&
@@ -197,6 +232,12 @@ function shoesAppearWhiteOrLight(shoesDesc: string): boolean {
   return true;
 }
 
+/**
+ * Step 6a of the pipeline — WHY: even when scores are fine, the model's prose
+ * often calls a normal cap+chain+headphones trio "overloaded". Scrub that
+ * phrasing so the text does not contradict the accessory-score floor applied
+ * right after this (which audits these same fields for clash evidence).
+ */
 function sanitizeSoftAccessoryOverloadLabels(result: AnalysisResult): void {
   if (!hasCapChainHeadphoneTrio(result.detectedItems.accessories)) return;
 
@@ -205,6 +246,13 @@ function sanitizeSoftAccessoryOverloadLabels(result: AnalysisResult): void {
       .replace(/\boverloaded with accessories\b/gi, "not overloaded across accessories")
       .replace(/\baccessory overload\b/gi, "a coordinated trio")
       .replace(/\bover[- ]accessorized\b/gi, "accessorized intentionally")
+      // DEAD: the trailing \b means this never matches the intended "crowded
+      // accessories"/"crowded accessorizing" (a word character follows
+      // "accessor", so there is no boundary) — it only matches a bare
+      // "crowded accessor", which the model does not emit. The replacement
+      // text also looks like a typo for "accessory details". Kept in place
+      // during the 2026-07 refactor; fixing or removing it is a behavior
+      // decision for a dedicated follow-up.
       .replace(/\bcrowded accessor\b/gi, "accessor details")
       .replace(/\s{2,}/g, " ")
       .trim();
@@ -214,6 +262,14 @@ function sanitizeSoftAccessoryOverloadLabels(result: AnalysisResult): void {
   result.weakestPart = scrubOverload(result.weakestPart);
 }
 
+/**
+ * Step 6b of the pipeline — WHY: despite prompt rules saying coordinated
+ * stacks "should usually be 7/10 or higher", the model routinely under-scores
+ * accessories for normal casual/streetwear stacks. Floor the score at 7 when
+ * a recognized stack is worn and nothing in the (already rewritten) text
+ * provides real clash evidence. Must run AFTER the overload-label scrub and
+ * the donts rewrites, because the audit below reads those rewritten fields.
+ */
 function maybeRaiseAccessoryScoreForRelaxedModes(result: AnalysisResult, occasion: OccasionMode): void {
   const relaxed: OccasionMode[] = ["Casual", "Streetwear"];
   if (!relaxed.includes(occasion)) return;
@@ -227,8 +283,7 @@ function maybeRaiseAccessoryScoreForRelaxedModes(result: AnalysisResult, occasio
 
   const trioMatch = hasCapChainHeadphoneTrio(acc);
   const styleSignalText = `${result.detectedItems.styleVibe} ${result.styleKeywords.join(" ")}`;
-  const streetSignals = ["streetwear", "oversized", "baggy", "relaxed", "casual", "skater", "urban", "layered", "sporty"];
-  const hasStreetStyleHint = hasAnySignal(styleSignalText, streetSignals);
+  const hasStreetStyleHint = hasAnySignal(styleSignalText, STREETWEAR_STYLE_SIGNALS);
   const streetStack =
     occasion === "Streetwear" &&
     hasClassicStreetwearAccessoryStack(acc) &&
@@ -241,6 +296,11 @@ function maybeRaiseAccessoryScoreForRelaxedModes(result: AnalysisResult, occasio
   result.scoreReasons.accessories = `${result.scoreReasons.accessories} Coordinated cap + chain + headphones-type stacks read normal for casual/streetwear unless something clashes.`;
 }
 
+/**
+ * WHY: broader companion to hasCapChainHeadphoneTrio — recognizes any loose
+ * combination of standard streetwear accessories (cap/bag/belt/watch/…) so
+ * the accessory-score floor also covers stacks that aren't the exact trio.
+ */
 function hasClassicStreetwearAccessoryStack(accessories: string[]): boolean {
   if (accessories.length === 0) return false;
   const lower = accessories.map((a) => a.toLowerCase()).join(" | ");
@@ -258,6 +318,14 @@ function hasClassicStreetwearAccessoryStack(accessories: string[]): boolean {
   return hits.length >= 2 || (accessories.length >= 2 && hits.length >= 1);
 }
 
+/**
+ * WHY: cheap visual proxy for "this is actually a streetwear outfit", derived
+ * from detected items rather than the model's (less reliable) style text.
+ * Used to justify score floors: each matching signal group adds 1, and the
+ * callers require 2-3+ signals before adjusting anything.
+ * NOTE: the "over" check is intentionally broad — it also matches oversized,
+ * pullover, overshirt, etc. (preserved from the original implementation).
+ */
 function countStreetwearSignals(detected: AnalysisResult["detectedItems"]): number {
   let count = 0;
   const checks = [
@@ -268,17 +336,21 @@ function countStreetwearSignals(detected: AnalysisResult["detectedItems"]): numb
     detected.accessories.join(" ")
   ].map((value) => value.toLowerCase());
 
-  if (checks.some((value) => value.includes("oversized hoodie") || (value.includes("hoodie") && value.includes("oversized")))) count += 1;
-  if (checks.some((value) => value.includes("baggy pants") || value.includes("baggy") || value.includes("cargo"))) count += 1;
+  if (checks.some((value) => value.includes("hoodie") && value.includes("oversized"))) count += 1;
+  if (checks.some((value) => value.includes("baggy") || value.includes("cargo"))) count += 1;
   if (checks.some((value) => value.includes("cap"))) count += 1;
   if (checks.some((value) => value.includes("headphones"))) count += 1;
   if (checks.some((value) => value.includes("sneakers") || value.includes("trainer"))) count += 1;
-  if (checks.some((value) => value.includes("layered") || value.includes("over") || value.includes("overshirt"))) count += 1;
-  if (checks.some((value) => value.includes("loose silhouette") || (value.includes("loose") && value.includes("silhouette")))) count += 1;
+  if (checks.some((value) => value.includes("layered") || value.includes("over"))) count += 1;
+  if (checks.some((value) => value.includes("loose") && value.includes("silhouette"))) count += 1;
 
   return count;
 }
 
+// DEAD: unreachable — only called from backfillAiConfidence(), whose guard can
+// never be true (see the DEAD note there). Kept in place during the 2026-07
+// refactor pending a decision on restoring visibility-based confidence
+// estimates for responses that omit aiConfidence.
 function estimateConfidenceFromDetected(result: AnalysisResult): number {
   const visibilityText = [
     result.detectedItems.outerwear,
@@ -300,14 +372,41 @@ function estimateConfidenceFromDetected(result: AnalysisResult): number {
   return 86;
 }
 
-function sanitizeResult(data: Partial<AnalysisResult>, selectedOccasion: OccasionMode): AnalysisResult {
+/* -------------------------------------------------------------------------- *
+ * sanitizeResult pipeline
+ *
+ * The vision model's JSON is post-processed by the ordered steps below. Each
+ * step compensates for a specific, repeatedly-observed failure in raw model
+ * output that prompt rules alone did not fix (the prompt already forbids most
+ * of these behaviors; the model drifts anyway). Steps run in a fixed order
+ * because some steps read text that earlier steps rewrite — see
+ * sanitizeResult() at the bottom for the ordering contract.
+ * -------------------------------------------------------------------------- */
+
+// Canned copy shared between the upgrade-idea rewrite rules and the streetwear
+// tapered-pants scrub so the two compensations stay word-for-word in sync.
+const BAGGY_BALANCE_ADVICE =
+  "Keep the baggy pants, but improve balance with a stronger waist detail, cleaner shoe shape, or cropped outer layer.";
+const STREETWEAR_ACCESSORY_UPGRADE_TITLE = "Refine your accessory story";
+const STREETWEAR_ACCESSORY_UPGRADE_DESC =
+  "Make one accessory stand out more, add a stronger chain, belt detail, or crossbody bag, and keep everything intentional instead of random.";
+
+/**
+ * Step 1 — structural normalization.
+ * The model can omit, mistype, or overload any field, so every score is
+ * clamped (NaN-safe: NaN/missing scores become 7, confidence becomes 80),
+ * every string gets a neutral default, and every list is length-capped.
+ * Every later step relies on this: they assume a fully-populated
+ * AnalysisResult and never re-check shape.
+ */
+function normalizeRawResult(data: Partial<AnalysisResult>): AnalysisResult {
   const breakdown: Partial<AnalysisResult["scoreBreakdown"]> = data.scoreBreakdown ?? {};
   const reasons: Partial<AnalysisResult["scoreReasons"]> = data.scoreReasons ?? {};
   const ideas: Partial<AnalysisResult["upgradeIdeas"][number]>[] = Array.isArray(data.upgradeIdeas)
     ? data.upgradeIdeas.slice(0, 3)
     : [];
 
-  const sanitized: AnalysisResult = {
+  return {
     overallRating: clampScore(data.overallRating),
     aiConfidence: clampPercent(data.aiConfidence),
     detectedItems: {
@@ -356,20 +455,42 @@ function sanitizeResult(data: Partial<AnalysisResult>, selectedOccasion: Occasio
     fitCorrections: sanitizeStringList(data.fitCorrections, 3),
     stylingIdeas: sanitizeStringList(data.stylingIdeas, 3),
     styleKeywords: Array.isArray(data.styleKeywords) ? data.styleKeywords.slice(0, 8).map(String) : ["clean"],
-    fashionBadges: []
+    fashionBadges: [] // filled in by resolveFashionBadges (step 2)
   };
+}
 
-  let badges = sanitizeFashionBadges(data.fashionBadges);
-  if (badges.length === 0) {
-    badges = inferFashionBadges({
-      styleKeywords: sanitized.styleKeywords,
-      detectedItems: { styleVibe: sanitized.detectedItems.styleVibe },
-      scoreBreakdown: { trendLevel: sanitized.scoreBreakdown.trendLevel, fit: sanitized.scoreBreakdown.fit }
-    });
-  }
-  sanitized.fashionBadges = badges;
+/**
+ * Step 2 — fashion badges.
+ * The model regularly invents badge names outside the allowed list, or omits
+ * the field entirely. Whitelist what it sent; if nothing survives, infer
+ * badges from style keywords and scores so the UI never renders an empty
+ * badge row.
+ */
+function resolveFashionBadges(rawBadges: unknown, sanitized: AnalysisResult): string[] {
+  const badges = sanitizeFashionBadges(rawBadges);
+  if (badges.length > 0) return badges;
+  return inferFashionBadges({
+    styleKeywords: sanitized.styleKeywords,
+    detectedItems: { styleVibe: sanitized.detectedItems.styleVibe },
+    scoreBreakdown: { trendLevel: sanitized.scoreBreakdown.trendLevel, fit: sanitized.scoreBreakdown.fit }
+  });
+}
 
-  // Make upgrades/don'ts more outfit-aware and less generic.
+type OutfitContext = {
+  hasHoodie: boolean;
+  hasChunkySneakers: boolean;
+  shoesLightColored: boolean;
+  /** All accessory names joined + lowercased, for "is X already worn?" checks. */
+  accBlob: string;
+};
+
+/**
+ * Step 3 — outfit context.
+ * Lowercased views of what the model says is physically on the body. The
+ * upgrade-idea rules key off these because the main failure mode they correct
+ * is the model recommending ADDING an item that detectedItems already lists.
+ */
+function buildOutfitContext(sanitized: AnalysisResult): OutfitContext {
   const itemText = [
     sanitized.detectedItems.outerwear,
     sanitized.detectedItems.top,
@@ -379,42 +500,65 @@ function sanitizeResult(data: Partial<AnalysisResult>, selectedOccasion: Occasio
   ]
     .join(" ")
     .toLowerCase();
-  const hasHoodie = itemText.includes("hoodie");
-  const hasChunkySneakers = (itemText.includes("chunky") && itemText.includes("sneaker")) || itemText.includes("dad sneaker");
-  const shoesLightColored = shoesAppearWhiteOrLight(sanitized.detectedItems.shoes);
-  const accBlob = sanitized.detectedItems.accessories.join(" ").toLowerCase();
 
-  const baggyBalanceAdvice =
-    "Keep the baggy pants, but improve balance with a stronger waist detail, cleaner shoe shape, or cropped outer layer.";
-  const streetwearAccessoryUpgradeTitle = "Refine your accessory story";
-  const streetwearAccessoryUpgradeDesc =
-    "Make one accessory stand out more, add a stronger chain, belt detail, or crossbody bag, and keep everything intentional instead of random.";
+  return {
+    hasHoodie: itemText.includes("hoodie"),
+    hasChunkySneakers: (itemText.includes("chunky") && itemText.includes("sneaker")) || itemText.includes("dad sneaker"),
+    shoesLightColored: shoesAppearWhiteOrLight(sanitized.detectedItems.shoes),
+    accBlob: sanitized.detectedItems.accessories.join(" ").toLowerCase()
+  };
+}
 
-  sanitized.upgradeIdeas = sanitized.upgradeIdeas.map((idea) => {
-    const lowerTitle = idea.title.toLowerCase();
-    const lowerDesc = idea.description.toLowerCase();
+type UpgradeIdeaText = {
+  lowerTitle: string;
+  lowerDesc: string;
+  /**
+   * Legacy `lowerDesc + lowerTitle` blob (description first, no separator)
+   * that several original regexes test against. A match can theoretically
+   * straddle the desc/title seam; preserved exactly to keep behavior identical.
+   */
+  combined: string;
+};
 
-    const suggestsContrastLightSneakers =
-      lowerDesc.includes("white sneaker") ||
-      lowerDesc.includes("white trainers") ||
-      lowerDesc.includes("light grey sneaker") ||
-      lowerDesc.includes("light gray sneaker") ||
-      lowerDesc.includes("contrast sneaker") ||
-      lowerDesc.includes("brighter sneaker") ||
-      lowerDesc.includes("brighten the lower") ||
-      lowerDesc.includes("lighter sneaker") ||
-      lowerTitle.includes("contrast sneaker");
+type UpgradeIdeaRewriteRule = {
+  name: string;
+  matches: (idea: UpgradeIdeaText, ctx: OutfitContext, occasion: OccasionMode) => boolean;
+  rewrite: () => { title: string; description: string };
+};
 
-    if (shoesLightColored && suggestsContrastLightSneakers) {
-      return {
-        title: "Refine sneaker shape, not color",
-        description:
-          "Your sneakers already read light—focus on a cleaner profile, slightly more structured sneaker, or sharper sole line instead of reaching for extra white or high-contrast trainers.",
-        difficulty: idea.difficulty
-      };
-    }
-
-    if (
+/**
+ * Step 4 — upgrade-idea rewrites. First matching rule wins (ORDER MATTERS);
+ * unmatched ideas pass through untouched. Difficulty is always preserved.
+ */
+const UPGRADE_IDEA_REWRITE_RULES: UpgradeIdeaRewriteRule[] = [
+  {
+    // WHY: the model's favorite generic tip is "add white/contrast sneakers
+    // for freshness" even when the detected shoes are already white or light.
+    // Redirect to shape/structure advice instead of a redundant color swap.
+    name: "light-shoes-contrast-sneaker",
+    matches: ({ lowerTitle, lowerDesc }, ctx) =>
+      ctx.shoesLightColored &&
+      (lowerDesc.includes("white sneaker") ||
+        lowerDesc.includes("white trainers") ||
+        lowerDesc.includes("light grey sneaker") ||
+        lowerDesc.includes("light gray sneaker") ||
+        lowerDesc.includes("contrast sneaker") ||
+        lowerDesc.includes("brighter sneaker") ||
+        lowerDesc.includes("brighten the lower") ||
+        lowerDesc.includes("lighter sneaker") ||
+        lowerTitle.includes("contrast sneaker")),
+    rewrite: () => ({
+      title: "Refine sneaker shape, not color",
+      description:
+        "Your sneakers already read light—focus on a cleaner profile, slightly more structured sneaker, or sharper sole line instead of reaching for extra white or high-contrast trainers."
+    })
+  },
+  {
+    // WHY: "introduce a fitted layer" is anti-streetwear boilerplate the prompt
+    // explicitly bans, but the model still emits variants of it. Replace with
+    // the approved cropped/structured phrasing.
+    name: "fitted-layer-boilerplate",
+    matches: ({ lowerTitle, lowerDesc }) =>
       lowerTitle.includes("introduce fitted") ||
       lowerDesc.includes("introduce fitted") ||
       lowerTitle.includes("fitted layer") ||
@@ -422,88 +566,99 @@ function sanitizeResult(data: Partial<AnalysisResult>, selectedOccasion: Occasio
       lowerDesc.includes("fitted overshirt") ||
       lowerTitle.includes("fitted overshirt") ||
       (lowerTitle.includes("layering") && lowerDesc.includes("fitted")) ||
-      (lowerDesc.includes("fitted") && lowerDesc.includes("bomber") && lowerDesc.includes("layer"))
-    ) {
-      return {
-        title: "Sharpen upper-body shape",
-        description: "Try a cropped jacket, structured overshirt, or shorter hoodie to improve upper-body shape.",
-        difficulty: idea.difficulty
-      };
-    }
-
-    if (
-      /\bchain\b|\bnecklace\b/.test(accBlob) &&
-      /\b(?:add|try|introduce|wear)\s+(?:a\s+)?(?:simple\s+|silver\s+|gold\s+)?chain\b|\bsimple\s+chain\b/i.test(lowerDesc + lowerTitle) &&
-      !/\bstronger\b|\bheavier\b|\bthicker\b|\bdifferent\s+metal\b|\bswap\b/i.test(lowerDesc + lowerTitle)
-    ) {
-      return {
-        title: "Change an accessory angle",
-        description:
-          "You already have a chain—lean into belt detail, a crossbody bag, or a bolder chain weight instead of adding the same idea twice.",
-        difficulty: idea.difficulty
-      };
-    }
-
-    if (
-      /\bcap\b|\bhat\b|\bbeanie\b/.test(accBlob) &&
-      /(?:add|try|grab|pick up).*(cap|beanie|hat)/i.test(lowerDesc + lowerTitle) &&
-      !/(swap|switch|better\s*(fit|shape)|different\s+(color|fabric))/i.test(lowerDesc + lowerTitle)
-    ) {
-      return {
-        title: "Balance what you already have on",
-        description:
-          "You already committed to headwear—tighten proportions with cleaner shoe shape or a cropped structured layer instead of adding another headline piece.",
-        difficulty: idea.difficulty
-      };
-    }
-
-    if (
-      /headphones?/.test(accBlob) &&
-      /headphones?/.test(lowerDesc + lowerTitle) &&
-      !/(different|sleeker|minimal|neckband|stem)/i.test(lowerDesc + lowerTitle)
-    ) {
-      return {
-        title: "Polish headphone styling",
-        description:
-          "Headphones already read as part of the look—instead of layering more gear, tuck cables cleaner or streamline the hoodie collar so frames sit sharper.",
-        difficulty: idea.difficulty
-      };
-    }
-
-    if (
+      (lowerDesc.includes("fitted") && lowerDesc.includes("bomber") && lowerDesc.includes("layer")),
+    rewrite: () => ({
+      title: "Sharpen upper-body shape",
+      description: "Try a cropped jacket, structured overshirt, or shorter hoodie to improve upper-body shape."
+    })
+  },
+  {
+    // WHY: don't tell the user to add a chain they are already wearing. Ideas
+    // that clearly mean "upgrade/swap the existing chain" (stronger, heavier,
+    // thicker, different metal, swap) pass through untouched.
+    name: "duplicate-chain",
+    matches: ({ combined }, ctx) =>
+      /\bchain\b|\bnecklace\b/.test(ctx.accBlob) &&
+      /\b(?:add|try|introduce|wear)\s+(?:a\s+)?(?:simple\s+|silver\s+|gold\s+)?chain\b|\bsimple\s+chain\b/i.test(combined) &&
+      !/\bstronger\b|\bheavier\b|\bthicker\b|\bdifferent\s+metal\b|\bswap\b/i.test(combined),
+    rewrite: () => ({
+      title: "Change an accessory angle",
+      description:
+        "You already have a chain—lean into belt detail, a crossbody bag, or a bolder chain weight instead of adding the same idea twice."
+    })
+  },
+  {
+    // WHY: same duplicate-item problem for headwear when a cap/hat/beanie is
+    // already on. Swap/fit/color suggestions are legitimate and pass through.
+    name: "duplicate-headwear",
+    matches: ({ combined }, ctx) =>
+      /\bcap\b|\bhat\b|\bbeanie\b/.test(ctx.accBlob) &&
+      /(?:add|try|grab|pick up).*(cap|beanie|hat)/i.test(combined) &&
+      !/(swap|switch|better\s*(fit|shape)|different\s+(color|fabric))/i.test(combined),
+    rewrite: () => ({
+      title: "Balance what you already have on",
+      description:
+        "You already committed to headwear—tighten proportions with cleaner shoe shape or a cropped structured layer instead of adding another headline piece."
+    })
+  },
+  {
+    // WHY: same duplicate-item problem for headphones; "different/sleeker/…"
+    // qualifiers indicate a legitimate refinement suggestion and pass through.
+    name: "duplicate-headphones",
+    matches: ({ combined }, ctx) =>
+      /headphones?/.test(ctx.accBlob) &&
+      /headphones?/.test(combined) &&
+      !/(different|sleeker|minimal|neckband|stem)/i.test(combined),
+    rewrite: () => ({
+      title: "Polish headphone styling",
+      description:
+        "Headphones already read as part of the look—instead of layering more gear, tuck cables cleaner or streamline the hoodie collar so frames sit sharper."
+    })
+  },
+  {
+    // WHY: "add a fitted outer layer" / "add a hoodie" when a hoodie is already
+    // worn is duplicate layering advice; redirect to proportion refinement.
+    name: "duplicate-outer-layer",
+    matches: ({ lowerTitle, lowerDesc }, ctx) =>
       lowerTitle.includes("fitted outer layer") ||
       lowerDesc.includes("fitted outer layer") ||
-      (hasHoodie && (lowerDesc.includes("add a hoodie") || lowerTitle.includes("add hoodie")))
-    ) {
-      return {
-        title: "Sharpen your top-layer proportions",
-        description: "Try a cropped bomber, denim jacket, shorter zip hoodie, or structured overshirt to clean up proportions.",
-        difficulty: idea.difficulty
-      };
-    }
-    if (hasChunkySneakers && (lowerDesc.includes("chunky sneaker") || lowerTitle.includes("chunky sneaker"))) {
-      return {
-        title: "Refine footwear shape",
-        description: "Keep your current sneaker lane but choose a cleaner silhouette so the outfit feels less heavy.",
-        difficulty: idea.difficulty
-      };
-    }
-    if (
-      (selectedOccasion === "Streetwear" || selectedOccasion === "Casual") &&
+      (ctx.hasHoodie && (lowerDesc.includes("add a hoodie") || lowerTitle.includes("add hoodie"))),
+    rewrite: () => ({
+      title: "Sharpen your top-layer proportions",
+      description: "Try a cropped bomber, denim jacket, shorter zip hoodie, or structured overshirt to clean up proportions."
+    })
+  },
+  {
+    // WHY: don't suggest chunky sneakers when chunky sneakers are already worn.
+    name: "duplicate-chunky-sneakers",
+    matches: ({ lowerTitle, lowerDesc }, ctx) =>
+      ctx.hasChunkySneakers && (lowerDesc.includes("chunky sneaker") || lowerTitle.includes("chunky sneaker")),
+    rewrite: () => ({
+      title: "Refine footwear shape",
+      description: "Keep your current sneaker lane but choose a cleaner silhouette so the outfit feels less heavy."
+    })
+  },
+  {
+    // WHY: generic "simplify accessories" advice contradicts the product stance
+    // that coordinated stacks are normal for casual/streetwear; steer toward
+    // intentional accessory storytelling instead of removal.
+    name: "simplify-accessories",
+    matches: ({ lowerTitle, lowerDesc }, _ctx, occasion) =>
+      (occasion === "Streetwear" || occasion === "Casual") &&
       (lowerTitle.includes("simplify accessor") ||
         lowerDesc.includes("simplify accessor") ||
         lowerTitle.includes("fewer accessor") ||
         lowerDesc.includes("fewer accessor") ||
-        lowerDesc.includes("remove accessor"))
-    ) {
-      return {
-        title: streetwearAccessoryUpgradeTitle,
-        description: streetwearAccessoryUpgradeDesc,
-        difficulty: idea.difficulty
-      };
-    }
-    if (
-      selectedOccasion === "Streetwear" &&
+        lowerDesc.includes("remove accessor")),
+    rewrite: () => ({ title: STREETWEAR_ACCESSORY_UPGRADE_TITLE, description: STREETWEAR_ACCESSORY_UPGRADE_DESC })
+  },
+  {
+    // WHY: "wear tapered/slim pants" is the model's default streetwear fix, but
+    // intentional baggy pants are valid streetwear per the product stance;
+    // replace with silhouette-balancing advice instead.
+    name: "tapered-pants-for-streetwear",
+    matches: ({ lowerTitle, lowerDesc }, _ctx, occasion) =>
+      occasion === "Streetwear" &&
       (lowerDesc.includes("tapered pant") ||
         lowerTitle.includes("tapered pant") ||
         lowerDesc.includes("slim pant") ||
@@ -511,24 +666,45 @@ function sanitizeResult(data: Partial<AnalysisResult>, selectedOccasion: Occasio
         lowerDesc.includes("slimmer pant") ||
         lowerTitle.includes("slimmer pant") ||
         lowerDesc.includes("fitted pant") ||
-        lowerTitle.includes("fitted pant"))
-    ) {
-      return {
-        title: "Balance the baggy silhouette",
-        description: baggyBalanceAdvice,
-        difficulty: idea.difficulty
-      };
+        lowerTitle.includes("fitted pant")),
+    rewrite: () => ({ title: "Balance the baggy silhouette", description: BAGGY_BALANCE_ADVICE })
+  }
+];
+
+function sanitizeUpgradeIdeas(sanitized: AnalysisResult, ctx: OutfitContext, occasion: OccasionMode): void {
+  sanitized.upgradeIdeas = sanitized.upgradeIdeas.map((idea) => {
+    const lowerTitle = idea.title.toLowerCase();
+    const lowerDesc = idea.description.toLowerCase();
+    const text: UpgradeIdeaText = { lowerTitle, lowerDesc, combined: lowerDesc + lowerTitle };
+    for (const rule of UPGRADE_IDEA_REWRITE_RULES) {
+      if (rule.matches(text, ctx, occasion)) {
+        return { ...rule.rewrite(), difficulty: idea.difficulty };
+      }
     }
     return idea;
   });
+}
 
+/**
+ * Step 5 — donts rewrites. Same motivation as the upgrade-idea rules: the
+ * model's donts often tell casual/streetwear wearers to strip a coordinated
+ * accessory stack, or use vague boilerplate. First matching rule wins.
+ */
+function sanitizeDonts(sanitized: AnalysisResult, occasion: OccasionMode): void {
   sanitized.donts = sanitized.donts.map((item) => {
     const lower = item.toLowerCase();
+
+    // WHY: "mismatched color tones" is vague boilerplate; make it actionable.
     if (lower.includes("mismatched color tones")) {
       return "Avoid adding extra loud colors that fight your current palette.";
     }
+
+    // WHY: with a small coordinated stack and no clash evidence anywhere in
+    // the output, "too many accessories"-type donts would contradict the
+    // accessory-score floor applied later in the pipeline; soften them to
+    // "don't add MORE" instead of "remove what you have".
     if (
-      (selectedOccasion === "Casual" || selectedOccasion === "Streetwear") &&
+      (occasion === "Casual" || occasion === "Streetwear") &&
       sanitized.detectedItems.accessories.length <= 4 &&
       (hasCapChainHeadphoneTrio(sanitized.detectedItems.accessories) ||
         hasClassicStreetwearAccessoryStack(sanitized.detectedItems.accessories)) &&
@@ -544,8 +720,14 @@ function sanitizeResult(data: Partial<AnalysisResult>, selectedOccasion: Occasio
     ) {
       return "Avoid adding too many extra accessories.";
     }
+
+    // WHY: when the canonical cap+chain+headphones trio is worn, standardize
+    // the remaining wordy donts into short canonical phrasings. Partially
+    // overlaps the rule above by design — this one also fires when clash
+    // evidence exists or for non-contiguous phrasings ("too many loud
+    // accessories").
     if (
-      (selectedOccasion === "Casual" || selectedOccasion === "Streetwear") &&
+      (occasion === "Casual" || occasion === "Streetwear") &&
       hasCapChainHeadphoneTrio(sanitized.detectedItems.accessories)
     ) {
       if (/bulky\b.*(?:sneaker|shoe|trainer)|(?:sneaker|shoe|trainer).*\bbulky/i.test(lower) && !/clash|\bfight\b/i.test(lower))
@@ -561,93 +743,197 @@ function sanitizeResult(data: Partial<AnalysisResult>, selectedOccasion: Occasio
     }
     return item;
   });
+}
 
-  sanitizeSoftAccessoryOverloadLabels(sanitized);
-  maybeRaiseAccessoryScoreForRelaxedModes(sanitized, selectedOccasion);
+/**
+ * Step 7 — streetwear tapered-pants scrub (prose fields).
+ * The "tapered-pants-for-streetwear" rule above fixes upgrade ideas; this
+ * catches the same advice leaking into mainFeedback and the fit reason.
+ * NOTE: it splices a full replacement sentence into the middle of an existing
+ * sentence, which can read awkwardly — preserved as-is from the original
+ * implementation.
+ */
+function scrubTaperedPantsAdviceForStreetwear(sanitized: AnalysisResult, occasion: OccasionMode): void {
+  if (occasion !== "Streetwear") return;
+  sanitized.mainFeedback = sanitized.mainFeedback.replace(
+    /\bslightly tapered pants?\b|\btapered pants?\b|\bslim(?:mer)? pants?\b|\bfitted pants?\b/gi,
+    BAGGY_BALANCE_ADVICE
+  );
+  sanitized.scoreReasons.fit = sanitized.scoreReasons.fit.replace(
+    /\bslightly tapered pants?\b|\btapered pants?\b|\bslim(?:mer)? pants?\b|\bfitted pants?\b/gi,
+    BAGGY_BALANCE_ADVICE
+  );
+  sanitized.mainFeedback = sanitized.mainFeedback.replace(/\s{2,}/g, " ").trim();
+  sanitized.scoreReasons.fit = sanitized.scoreReasons.fit.replace(/\s{2,}/g, " ").trim();
+}
 
-  if (selectedOccasion === "Streetwear") {
-    sanitized.mainFeedback = sanitized.mainFeedback.replace(
-      /\bslightly tapered pants?\b|\btapered pants?\b|\bslim(?:mer)? pants?\b|\bfitted pants?\b/gi,
-      baggyBalanceAdvice
-    );
-    sanitized.scoreReasons.fit = sanitized.scoreReasons.fit.replace(
-      /\bslightly tapered pants?\b|\btapered pants?\b|\bslim(?:mer)? pants?\b|\bfitted pants?\b/gi,
-      baggyBalanceAdvice
-    );
-    sanitized.mainFeedback = sanitized.mainFeedback.replace(/\s{2,}/g, " ").trim();
-    sanitized.scoreReasons.fit = sanitized.scoreReasons.fit.replace(/\s{2,}/g, " ").trim();
-  }
+// DEAD: this can never fire. clampPercent() in normalizeRawResult() (part of
+// the NaN guards added 2026-07-06) always yields a finite 0-100 number —
+// missing/NaN confidence becomes 80 — so the condition below is always false
+// and estimateConfidenceFromDetected() is unreachable. Kept in place during
+// the 2026-07 refactor because removal is a behavior decision, not a
+// structural one: a model that omits aiConfidence used to get the
+// visibility-based 68/72/86 estimate and now silently gets 80. Fix or delete
+// in a dedicated follow-up.
+function backfillAiConfidence(sanitized: AnalysisResult): void {
   if (sanitized.aiConfidence === undefined || Number.isNaN(sanitized.aiConfidence)) {
     sanitized.aiConfidence = estimateConfidenceFromDetected(sanitized);
   }
+}
 
-  if (selectedOccasion !== "Streetwear") {
-    return sanitized;
-  }
+/**
+ * Words that mark the model's own text as praising standout styling. Without
+ * one of these, streetwear fit/overall scores are capped at 8 (see
+ * capStreetwearScoresForNonStandout).
+ */
+const STREETWEAR_STANDOUT_SIGNALS = [
+  "standout",
+  "unique",
+  "statement",
+  "polished",
+  "excellent",
+  "sharp",
+  "intentional",
+  "refined"
+];
 
-  const streetwearSignals = ["streetwear", "oversized", "baggy", "relaxed", "casual", "skater", "urban", "layered", "sporty"];
-  const standoutSignals = ["standout", "unique", "statement", "polished", "excellent", "sharp", "intentional", "refined"];
-  const qualityRiskSignals = [
-    "messy",
-    "dirty",
-    "stained",
-    "wrinkled",
-    "clash",
-    "mismatched",
-    "poor quality",
-    "low quality",
-    "damaged"
-  ];
+/** Warnings that make automatic score-raising unsafe — if present, skip all streetwear adjustments. */
+const STREETWEAR_QUALITY_RISK_SIGNALS = [
+  "messy",
+  "dirty",
+  "stained",
+  "wrinkled",
+  "clash",
+  "mismatched",
+  "poor quality",
+  "low quality",
+  "damaged"
+];
 
+/**
+ * Step 8 gate — keep streetwear adjustments conservative: if the model flagged
+ * real quality/matching problems anywhere in its text (or scored color
+ * matching very low), trust it and skip all score raising and capping.
+ */
+function hasStreetwearQualityRisk(result: AnalysisResult): boolean {
   const qualityContext = [
-    sanitized.mainFeedback,
-    sanitized.colorAdvice,
-    sanitized.weakestPart,
-    sanitized.scoreReasons.colorMatching,
-    sanitized.scoreReasons.fit,
-    sanitized.scoreReasons.occasion,
-    sanitized.scoreReasons.trendLevel,
-    sanitized.styleKeywords.join(" ")
+    result.mainFeedback,
+    result.colorAdvice,
+    result.weakestPart,
+    result.scoreReasons.colorMatching,
+    result.scoreReasons.fit,
+    result.scoreReasons.occasion,
+    result.scoreReasons.trendLevel,
+    result.styleKeywords.join(" ")
   ].join(" ");
+  return hasAnySignal(qualityContext, STREETWEAR_QUALITY_RISK_SIGNALS) || result.scoreBreakdown.colorMatching <= 4;
+}
 
-  // Keep adjustments conservative: skip if quality/matching warnings are present.
-  const hasQualityRisk = hasAnySignal(qualityContext, qualityRiskSignals) || sanitized.scoreBreakdown.colorMatching <= 4;
-  if (hasQualityRisk) {
-    return sanitized;
-  }
-
-  const styleSignalText = `${sanitized.detectedItems.styleVibe} ${sanitized.styleKeywords.join(" ")}`;
-  const hasStreetwearSignal = hasAnySignal(styleSignalText, streetwearSignals);
-  const visualStreetwearSignals = countStreetwearSignals(sanitized.detectedItems);
+function hasStandoutStylingLanguage(result: AnalysisResult): boolean {
   const standoutContext = [
-    sanitized.bestPart,
-    sanitized.mainFeedback,
-    sanitized.scoreReasons.fit,
-    sanitized.scoreReasons.trendLevel,
-    sanitized.scoreReasons.accessories
+    result.bestPart,
+    result.mainFeedback,
+    result.scoreReasons.fit,
+    result.scoreReasons.trendLevel,
+    result.scoreReasons.accessories
   ].join(" ");
-  const hasStandoutStyling = hasAnySignal(standoutContext, standoutSignals);
+  return hasAnySignal(standoutContext, STREETWEAR_STANDOUT_SIGNALS);
+}
 
-  if (hasStreetwearSignal && sanitized.scoreBreakdown.occasion < 7) {
-    sanitized.scoreBreakdown.occasion = 7;
-    sanitized.scoreReasons.occasion = `${sanitized.scoreReasons.occasion} The outfit clearly follows a streetwear silhouette, so the occasion match should not be rated too low.`;
+/**
+ * WHY: the model tends to under-score "occasion match" for clearly streetwear
+ * outfits even in Streetwear mode. If its own style text says the look is
+ * street-adjacent, floor the occasion score at 7.
+ */
+function applyStreetwearOccasionFloor(result: AnalysisResult): void {
+  const styleSignalText = `${result.detectedItems.styleVibe} ${result.styleKeywords.join(" ")}`;
+  if (!hasAnySignal(styleSignalText, STREETWEAR_STYLE_SIGNALS)) return;
+  if (result.scoreBreakdown.occasion >= 7) return;
+  result.scoreBreakdown.occasion = 7;
+  result.scoreReasons.occasion = `${result.scoreReasons.occasion} The outfit clearly follows a streetwear silhouette, so the occasion match should not be rated too low.`;
+}
+
+/**
+ * WHY: same under-scoring problem for trendLevel; here the evidence is visual
+ * (detected items) rather than the model's style text, and requires 3+
+ * distinct streetwear signals before flooring.
+ */
+function applyStreetwearTrendFloor(result: AnalysisResult): void {
+  if (countStreetwearSignals(result.detectedItems) < 3) return;
+  if (result.scoreBreakdown.trendLevel >= 7) return;
+  result.scoreBreakdown.trendLevel = 7;
+  result.scoreReasons.trendLevel = `${result.scoreReasons.trendLevel} Multiple streetwear signals are visible, so the trend/style rating should not be too low for this mode.`;
+}
+
+/**
+ * WHY: the flip side of the floors — the model also hands out 9s and 10s too
+ * easily in Streetwear mode. Product calibration says good streetwear lands
+ * 7.5–8.5, so unless the model's own text praises standout styling, cap fit
+ * and overall at 8 (and say why in the copy).
+ */
+function capStreetwearScoresForNonStandout(result: AnalysisResult): void {
+  if (result.scoreBreakdown.fit > 8) {
+    result.scoreBreakdown.fit = 8;
+    result.scoreReasons.fit = `${result.scoreReasons.fit} The silhouette works, but 9/10 fit is reserved for more polished and exceptionally intentional proportions.`;
   }
-
-  if (visualStreetwearSignals >= 3 && sanitized.scoreBreakdown.trendLevel < 7) {
-    sanitized.scoreBreakdown.trendLevel = 7;
-    sanitized.scoreReasons.trendLevel = `${sanitized.scoreReasons.trendLevel} Multiple streetwear signals are visible, so the trend/style rating should not be too low for this mode.`;
+  if (result.overallRating > 8) {
+    result.overallRating = 8;
+    result.mainFeedback = `${result.mainFeedback} Strong everyday streetwear result, with room for one standout detail before reaching 9/10 territory.`;
   }
+}
 
-  // Keep Streetwear scoring realistic: good outfits are usually 7.5-8.5 unless clearly standout.
+/**
+ * Step 8 — streetwear score adjustments (floors + non-standout cap).
+ * Only runs in Streetwear mode, and only when no quality risk was flagged.
+ */
+function applyStreetwearScoreAdjustments(result: AnalysisResult): void {
+  if (hasStreetwearQualityRisk(result)) return;
+
+  // Evaluate standout language BEFORE the floors append their own sentences to
+  // scoreReasons — matches the original evaluation order exactly.
+  const hasStandoutStyling = hasStandoutStylingLanguage(result);
+
+  applyStreetwearOccasionFloor(result);
+  applyStreetwearTrendFloor(result);
   if (!hasStandoutStyling) {
-    if (sanitized.scoreBreakdown.fit > 8) {
-      sanitized.scoreBreakdown.fit = 8;
-      sanitized.scoreReasons.fit = `${sanitized.scoreReasons.fit} The silhouette works, but 9/10 fit is reserved for more polished and exceptionally intentional proportions.`;
-    }
-    if (sanitized.overallRating > 8) {
-      sanitized.overallRating = 8;
-      sanitized.mainFeedback = `${sanitized.mainFeedback} Strong everyday streetwear result, with room for one standout detail before reaching 9/10 territory.`;
-    }
+    capStreetwearScoresForNonStandout(result);
+  }
+}
+
+/**
+ * Post-process the raw model JSON into the final AnalysisResult.
+ *
+ * ORDERING CONTRACT: steps run in a fixed order because later steps read text
+ * that earlier steps rewrite — e.g. the accessory-score floor (step 6b) audits
+ * the rewritten donts (step 5) and the scrubbed overload phrasing (step 6a)
+ * for clash evidence. Reordering these calls is a behavior change.
+ */
+function sanitizeResult(data: Partial<AnalysisResult>, selectedOccasion: OccasionMode): AnalysisResult {
+  // Step 1: structural normalization (clamps, defaults, list caps).
+  const sanitized = normalizeRawResult(data);
+  // Step 2: whitelist or infer fashion badges.
+  sanitized.fashionBadges = resolveFashionBadges(data.fashionBadges, sanitized);
+
+  // Step 3: precompute what is already on the body.
+  const ctx = buildOutfitContext(sanitized);
+  // Steps 4-5: rewrite upgrade ideas / donts that duplicate worn items or
+  // contradict the casual/streetwear product stance.
+  sanitizeUpgradeIdeas(sanitized, ctx, selectedOccasion);
+  sanitizeDonts(sanitized, selectedOccasion);
+
+  // Step 6a must run before 6b: the scrub rewrites the exact text fields that
+  // the accessory-score floor audits for clash evidence.
+  sanitizeSoftAccessoryOverloadLabels(sanitized);
+  maybeRaiseAccessoryScoreForRelaxedModes(sanitized, selectedOccasion);
+
+  // Step 7: scrub tapered-pants advice from prose (Streetwear only).
+  scrubTaperedPantsAdviceForStreetwear(sanitized, selectedOccasion);
+  // Step (dead): confidence backfill — see DEAD note on backfillAiConfidence.
+  backfillAiConfidence(sanitized);
+
+  // Step 8: streetwear-only score floors and non-standout cap.
+  if (selectedOccasion === "Streetwear") {
+    applyStreetwearScoreAdjustments(sanitized);
   }
 
   return sanitized;
