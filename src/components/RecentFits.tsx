@@ -32,39 +32,96 @@ export function RecentFits({ history }: Props) {
         Recent fits
       </p>
       <div className="flex gap-3 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {history.map((entry, i) => (
-          <motion.div
-            key={entry.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.07, duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-            className="group relative w-[96px] shrink-0 overflow-hidden rounded-2xl border border-white/[0.09] bg-slate-900/60 ring-1 ring-white/[0.04] backdrop-blur-md transition duration-200 hover:border-indigo-400/30 hover:ring-indigo-400/15"
-          >
-            <div className="relative h-[96px] overflow-hidden bg-slate-950">
-              {entry.thumbnail ? (
-                <img
-                  src={entry.thumbnail}
-                  alt={`${entry.occasion} outfit`}
-                  className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-slate-900/80 text-2xl">
-                  👗
-                </div>
-              )}
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
-              <p className={`absolute bottom-1.5 left-0 right-0 text-center text-[13px] font-bold tabular-nums ${scoreColor(entry.score)}`}>
-                {formatScore(entry.score)}
-                <span className="text-[9px] font-medium text-slate-400">/10</span>
-              </p>
-            </div>
-            <div className="px-2 pb-2.5 pt-2">
-              <p className="truncate text-[10px] font-semibold leading-none text-slate-200">{entry.occasion}</p>
-              <p className="mt-1 text-[9px] leading-none text-slate-500">{timeAgo(entry.date)}</p>
-            </div>
-          </motion.div>
-        ))}
+        {history.map((entry, i) =>
+          entry.kind === "compare" ? (
+            <CompareFitCard key={entry.id} entry={entry} index={i} />
+          ) : (
+            <motion.div
+              key={entry.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.07, duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+              className="group relative w-[96px] shrink-0 overflow-hidden rounded-2xl border border-white/[0.09] bg-slate-900/60 ring-1 ring-white/[0.04] backdrop-blur-md transition duration-200 hover:border-indigo-400/30 hover:ring-indigo-400/15"
+            >
+              <div className="relative h-[96px] overflow-hidden bg-slate-950">
+                {entry.thumbnail ? (
+                  <img
+                    src={entry.thumbnail}
+                    alt={`${entry.occasion} outfit`}
+                    className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-slate-900/80 text-2xl">
+                    👗
+                  </div>
+                )}
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+                <p className={`absolute bottom-1.5 left-0 right-0 text-center text-[13px] font-bold tabular-nums ${scoreColor(entry.score)}`}>
+                  {formatScore(entry.score)}
+                  <span className="text-[9px] font-medium text-slate-400">/10</span>
+                </p>
+              </div>
+              <div className="px-2 pb-2.5 pt-2">
+                <p className="truncate text-[10px] font-semibold leading-none text-slate-200">{entry.occasion}</p>
+                <p className="mt-1 text-[9px] leading-none text-slate-500">{timeAgo(entry.date)}</p>
+              </div>
+            </motion.div>
+          )
+        )}
       </div>
     </section>
+  );
+}
+
+/** A "vs" card for compare-mode history: two mini thumbnails + both scores. */
+function CompareFitCard({ entry, index }: { entry: FitHistoryEntry; index: number }) {
+  const scoreB = entry.scoreB ?? entry.score;
+  const aWon = entry.winner === "A";
+  const bWon = entry.winner === "B";
+
+  const half = (
+    thumb: string | null | undefined,
+    side: "A" | "B",
+    won: boolean,
+  ) => (
+    <div className="relative h-full w-1/2 overflow-hidden bg-slate-950">
+      {thumb ? (
+        <img src={thumb} alt={`Outfit ${side}`} className="h-full w-full object-cover" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-slate-900/80 text-lg">👗</div>
+      )}
+      {won && (
+        <span className="absolute left-1/2 top-1 -translate-x-1/2 rounded-full bg-amber-400/90 px-1 text-[7px] font-bold uppercase tracking-wide text-slate-950">
+          Win
+        </span>
+      )}
+    </div>
+  );
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.07, duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+      className="group relative w-[112px] shrink-0 overflow-hidden rounded-2xl border border-violet-400/15 bg-slate-900/60 ring-1 ring-white/[0.04] backdrop-blur-md transition duration-200 hover:border-violet-400/35 hover:ring-violet-400/15"
+    >
+      <div className="relative flex h-[96px]">
+        {half(entry.thumbnail, "A", aWon)}
+        {half(entry.thumbnailB, "B", bWon)}
+        <span className="absolute left-1/2 top-1/2 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-slate-950/85 text-[9px] font-bold text-slate-200 shadow-lg">
+          VS
+        </span>
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+        <p className="absolute bottom-1.5 left-0 right-0 flex items-center justify-center gap-1 text-[12px] font-bold tabular-nums">
+          <span className={aWon ? "text-amber-300" : scoreColor(entry.score)}>{formatScore(entry.score)}</span>
+          <span className="text-[8px] font-medium text-slate-500">vs</span>
+          <span className={bWon ? "text-amber-300" : scoreColor(scoreB)}>{formatScore(scoreB)}</span>
+        </p>
+      </div>
+      <div className="px-2 pb-2.5 pt-2">
+        <p className="truncate text-[10px] font-semibold leading-none text-slate-200">Compare · {entry.occasion}</p>
+        <p className="mt-1 text-[9px] leading-none text-slate-500">{timeAgo(entry.date)}</p>
+      </div>
+    </motion.div>
   );
 }

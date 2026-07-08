@@ -6,24 +6,15 @@ import { getOpenAiApiKey, OPENAI_API_KEY_SETUP_ERROR } from "@/lib/openaiApiKey"
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
 import { FLAGGED_IMAGE_MESSAGE, MODERATION_UNAVAILABLE_MESSAGE, moderateImage } from "@/lib/moderation";
 import { checkDailyCallCap, checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { signResult } from "@/lib/resultSignature";
 import { OCCASIONS, type OccasionMode } from "@/lib/occasions";
+import type { OutfitCompareResult } from "@/types/compare";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DAILY_CALL_CAP = Number(process.env.DAILY_CALL_LIMIT) || 500;
-
-type OutfitCompareResult = {
-  scoreA: number;
-  scoreB: number;
-  winner: "A" | "B" | "Tie";
-  closeness: "Clear win" | "Close win" | "Tie";
-  winnerReason: string;
-  outfitAFeedback: string;
-  outfitBFeedback: string;
-  weakerOutfitTips: string[];
-};
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
@@ -188,7 +179,7 @@ function errorMessageForUser(error: unknown): { status: number; message: string 
 }
 
 async function blobsToPayload(request: Request): Promise<
-  { imageAUrl: string; imageBUrl: string; occasion: OccasionMode } | NextResponse
+  { imageAUrl: string; imageBUrl: string; occasion: OccasionMode; brutalMode: boolean } | NextResponse
 > {
   const contentType = request.headers.get("content-type") || "";
   if (!contentType.includes("multipart/form-data")) {
@@ -201,6 +192,7 @@ async function blobsToPayload(request: Request): Promise<
     const blobB = formData.get("fileB");
     const occasionRaw = String(formData.get("occasion") ?? "Casual");
     const occasion = OCCASIONS.includes(occasionRaw as OccasionMode) ? (occasionRaw as OccasionMode) : "Casual";
+    const brutalMode = formData.get("brutalMode") === "1" || formData.get("brutalMode") === "true";
 
     if (!(blobA instanceof Blob) || !(blobB instanceof Blob)) {
       return jsonPayload({ error: "Missing fileA or fileB (image uploads)." }, 400);
@@ -219,7 +211,7 @@ async function blobsToPayload(request: Request): Promise<
 
     const [imageAUrl, imageBUrl] = await Promise.all([blobToUrl(blobA), blobToUrl(blobB)]);
 
-    return { imageAUrl, imageBUrl, occasion };
+    return { imageAUrl, imageBUrl, occasion, brutalMode };
   } catch (err) {
     console.error("Compare multipart parse error:", err);
     return jsonPayload(
@@ -246,7 +238,7 @@ export async function POST(request: Request) {
 
     const payload = await blobsToPayload(request);
     if (payload instanceof NextResponse) return payload;
-    const { imageAUrl, imageBUrl, occasion } = payload;
+    const { imageAUrl, imageBUrl, occasion, brutalMode } = payload;
 
     // Screen both images (in parallel) before the paid vision call; fail closed on
     // moderation errors — same safety-gate reasoning as /api/analyze.
@@ -340,6 +332,19 @@ Strict field rules:
 - outfitAFeedback / outfitBFeedback: one concise sentence EACH, only observations visible in THAT image.
 - weakerOutfitTips: exactly THREE short bullets aimed at the lower-scoring outfit; if Tie, blend improvements usable by either—but never the banned tailoring/slim cues for Streetwear/Casual.`;
 
+    // Mirrors the single-analysis brutal addendum, retargeted at the compare fields so
+    // the savage tone lands on winnerReason / A+B feedback rather than single-outfit copy.
+    const brutalModeAddendum = brutalMode
+      ? `
+
+BRUTAL AI MODE (playful savage stylist — NOT toxic):
+- Be honest, funny, slightly savage, and meme-worthy while staying respectful.
+- No insults about body, weight, face, ethnicity, gender, or cruelty. No slurs.
+- Use witty one-liners in winnerReason, outfitAFeedback, and outfitBFeedback when natural.
+- Examples of tone: "Outfit A showed up to win; Outfit B showed up to spectate." / "Main character fit vs its stunt double." / "Close call, but B's sneakers filed for a restraining order against those pants."
+- Still name what actually differs and keep weakerOutfitTips genuinely useful — roast the outfits, not the people.`
+      : "";
+
 
     const completion = await client.chat.completions.create({
       model,
@@ -347,7 +352,7 @@ Strict field rules:
         {
           role: "user",
           content: [
-            { type: "text", text: baseComparePrompt },
+            { type: "text", text: `${baseComparePrompt}${brutalModeAddendum}` },
             {
               type: "image_url",
               image_url: { url: imageAUrl, detail: "auto" }
@@ -386,7 +391,11 @@ Strict field rules:
       return jsonPayload({ error: "Could not finalize comparison. Please try again." }, 502);
     }
 
-    return jsonPayload({ compare }, 200);
+    // Sign the finalized comparison so /api/save-compare can prove it came from a real
+    // compare call — same HMAC gate that protects /api/save-result against forged posts.
+    const token = signResult(compare);
+
+    return jsonPayload({ compare, token }, 200);
   } catch (error: unknown) {
     console.error("Compare API error:", error);
     const { status, message } = errorMessageForUser(error);

@@ -6,6 +6,14 @@ export type FitHistoryEntry = {
   badges: string[];
   styleIdentity: string;
   thumbnail: string | null;
+  /**
+   * Compare-mode fields (all optional so pre-existing single-mode entries still parse).
+   * When kind === "compare", `score` holds Outfit A's score and these carry the rest.
+   */
+  kind?: "single" | "compare";
+  scoreB?: number;
+  thumbnailB?: string | null;
+  winner?: "A" | "B" | "Tie";
 };
 
 const STORAGE_KEY = "fitrate-history";

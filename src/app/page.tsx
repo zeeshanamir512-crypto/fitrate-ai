@@ -19,18 +19,8 @@ import { RecentFits } from "@/components/RecentFits";
 import { StreakBadge } from "@/components/StreakBadge";
 import { getStreak, updateStreak } from "@/lib/streak";
 import type { AnalysisResult, Difficulty } from "@/types/analysis";
+import type { OutfitCompareResult as CompareOutfitsResult } from "@/types/compare";
 type AppMode = "single" | "compare";
-
-type CompareOutfitsResult = {
-  scoreA: number;
-  scoreB: number;
-  winner: "A" | "B" | "Tie";
-  closeness: "Clear win" | "Close win" | "Tie";
-  winnerReason: string;
-  outfitAFeedback: string;
-  outfitBFeedback: string;
-  weakerOutfitTips: string[];
-};
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const BRUTAL_MODE_STORAGE_KEY = "fitrate-brutal-mode";
@@ -97,6 +87,7 @@ export default function Home() {
   const [fileB, setFileB] = useState<File | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [compareResult, setCompareResult] = useState<CompareOutfitsResult | null>(null);
+  const [compareToken, setCompareToken] = useState<string | null>(null);
   const [compareError, setCompareError] = useState<string | null>(null);
 
   const [brutalMode, setBrutalMode] = useState(false);
@@ -110,6 +101,11 @@ export default function Home() {
   const [compareShareCardPreviewVisible, setCompareShareCardPreviewVisible] = useState(false);
   const [compareShareCardExportLoading, setCompareShareCardExportLoading] = useState(false);
   const [compareShareCardExportError, setCompareShareCardExportError] = useState<string | null>(null);
+
+  const [compareShareLinkLoading, setCompareShareLinkLoading] = useState(false);
+  const [compareShareLinkUrl, setCompareShareLinkUrl] = useState<string | null>(null);
+  const [compareShareLinkError, setCompareShareLinkError] = useState<string | null>(null);
+  const [compareShareLinkCopied, setCompareShareLinkCopied] = useState(false);
 
   const previewBlobRef = useRef<string | null>(null);
   const compareBlobARef = useRef<string | null>(null);
@@ -175,6 +171,10 @@ export default function Home() {
     setCompareShareCardPreviewVisible(false);
     setCompareShareCardExportError(null);
     setCompareShareCardExportLoading(false);
+    setCompareShareLinkUrl(null);
+    setCompareShareLinkError(null);
+    setCompareShareLinkLoading(false);
+    setCompareShareLinkCopied(false);
   }, [compareResult]);
 
   useEffect(() => {
@@ -463,6 +463,7 @@ export default function Home() {
     setIsComparing(true);
     setCompareError(null);
     setCompareResult(null);
+    setCompareToken(null);
 
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 120_000);
@@ -472,6 +473,7 @@ export default function Home() {
       formData.set("fileA", fileA);
       formData.set("fileB", fileB);
       formData.set("occasion", occasionMode);
+      formData.set("brutalMode", brutalMode ? "1" : "0");
 
       const response = await fetch("/api/compare", {
         method: "POST",
@@ -479,7 +481,7 @@ export default function Home() {
         signal: controller.signal
       });
 
-      const parsed = await readApiJson<{ error?: string; message?: string; compare?: CompareOutfitsResult }>(response);
+      const parsed = await readApiJson<{ error?: string; message?: string; compare?: CompareOutfitsResult; token?: string }>(response);
       if (!parsed.ok) {
         setCompareError(parsed.message);
         return;
@@ -499,6 +501,30 @@ export default function Home() {
         return;
       }
       setCompareResult(data.compare);
+      setCompareToken(data.token ?? null);
+
+      // Save to Recent Fits (async, non-blocking) — mirrors single mode, but flagged
+      // kind:"compare" so history renders it as a vs matchup with both scores.
+      void (async () => {
+        const compare = data.compare!;
+        const [thumbA, thumbB] = await Promise.all([
+          previewUrlA ? makeThumbnail(previewUrlA) : Promise.resolve(null),
+          previewUrlB ? makeThumbnail(previewUrlB) : Promise.resolve(null),
+        ]);
+        const updated = addToFitHistory(loadFitHistory(), {
+          kind: "compare",
+          score: compare.scoreA,
+          scoreB: compare.scoreB,
+          winner: compare.winner,
+          occasion: occasionMode,
+          badges: [],
+          styleIdentity: `Outfit A vs Outfit B`,
+          thumbnail: thumbA,
+          thumbnailB: thumbB,
+        });
+        saveFitHistory(updated);
+        setFitHistory(updated);
+      })();
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === "AbortError") {
         setCompareError("Comparison timed out. Try smaller images or retry shortly.");
@@ -626,6 +652,58 @@ export default function Home() {
       setCompareShareCardExportError("Could not create the image. Try again or use a different browser.");
     } finally {
       setCompareShareCardExportLoading(false);
+    }
+  }
+
+  async function handleCreateCompareShareLink() {
+    if (!compareResult || compareShareLinkLoading) return;
+
+    // Already saved this comparison — just copy the existing link again.
+    if (compareShareLinkUrl) {
+      void copyCompareShareLink(compareShareLinkUrl);
+      return;
+    }
+
+    setCompareShareLinkLoading(true);
+    setCompareShareLinkError(null);
+    try {
+      const [thumbnailA, thumbnailB] = await Promise.all([
+        previewUrlA ? makeThumbnail(previewUrlA) : Promise.resolve(null),
+        previewUrlB ? makeThumbnail(previewUrlB) : Promise.resolve(null),
+      ]);
+
+      const res = await fetch("/api/save-compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          compare: compareResult,
+          occasion: occasionMode,
+          token: compareToken,
+          ...(thumbnailA ? { thumbnailA } : {}),
+          ...(thumbnailB ? { thumbnailB } : {}),
+        }),
+      });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !data.url) {
+        setCompareShareLinkError(data.error ?? "Could not create the share link. Please try again.");
+        return;
+      }
+      setCompareShareLinkUrl(data.url);
+      void copyCompareShareLink(data.url);
+    } catch {
+      setCompareShareLinkError("Could not create the share link. Check your connection and try again.");
+    } finally {
+      setCompareShareLinkLoading(false);
+    }
+  }
+
+  async function copyCompareShareLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCompareShareLinkCopied(true);
+      window.setTimeout(() => setCompareShareLinkCopied(false), 2200);
+    } catch {
+      // Clipboard may be blocked; the link stays visible for manual copy.
     }
   }
 
@@ -850,7 +928,7 @@ export default function Home() {
             </p>
           )}
 
-          {appMode === "single" && <BrutalModeToggle enabled={brutalMode} onChange={setBrutalMode} />}
+          <BrutalModeToggle enabled={brutalMode} onChange={setBrutalMode} />
 
           {appMode === "single" ? (
             <>
@@ -1400,9 +1478,43 @@ export default function Home() {
               >
                 Create Compare Share Card
               </button>
+              <button
+                type="button"
+                onClick={handleCreateCompareShareLink}
+                disabled={compareShareLinkLoading}
+                className="w-full rounded-xl border border-violet-400/40 bg-gradient-to-r from-violet-500/15 to-indigo-500/10 px-5 py-2.5 text-sm font-semibold text-violet-50 shadow-[0_8px_32px_-12px_rgba(139,92,246,0.45)] ring-1 ring-violet-400/25 transition duration-300 hover:-translate-y-0.5 hover:border-violet-300/55 hover:shadow-[0_14px_40px_-10px_rgba(139,92,246,0.5)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              >
+                {compareShareLinkLoading ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-300/30 border-t-violet-200" />
+                    Creating link…
+                  </span>
+                ) : compareShareLinkCopied ? (
+                  "✅ Link copied"
+                ) : compareShareLinkUrl ? (
+                  "🔗 Copy share link"
+                ) : (
+                  "🔗 Get shareable link"
+                )}
+              </button>
             </div>
+            {compareShareLinkUrl && (
+              <p className="mt-2 break-all text-xs text-slate-400">
+                Shareable link:{" "}
+                <a
+                  href={compareShareLinkUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-violet-300 underline transition hover:text-violet-200"
+                >
+                  {compareShareLinkUrl}
+                </a>
+              </p>
+            )}
+            {compareShareLinkError && <p className="mt-2 text-xs text-rose-300">{compareShareLinkError}</p>}
             <p className="mt-2 max-w-lg text-xs leading-relaxed text-slate-500">
-              Uploaded photos are not included in the compare share card.
+              Uploaded photos are not included in the compare share card. Your shareable link shows small
+              thumbnails of both outfits.
             </p>
 
             {compareShareCardPreviewVisible && (
