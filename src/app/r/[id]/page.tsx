@@ -5,6 +5,7 @@ import { getSharedResult } from "@/lib/resultStore";
 import { SCORE_BREAKDOWN_KEYS } from "@/types/analysis";
 import { LeaderboardSubmitButton } from "@/components/LeaderboardSubmitButton";
 import { StartBattleButton } from "@/components/StartBattleButton";
+import { formatScore } from "@/lib/formatScore";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const score = data.result.overallRating;
   const style = data.result.styleIdentity;
-  const title = `${score}/10 — ${style} | FitRate AI`;
+  const title = `${formatScore(score)}/10 — ${style} | FitRate AI`;
   const description = data.result.mainFeedback.slice(0, 155);
 
   return {
@@ -100,7 +101,7 @@ export default async function ResultPage({ params }: Props) {
             <p
               className={`text-7xl font-extrabold leading-none tracking-tight tabular-nums sm:text-8xl ${scoreColor}`}
             >
-              {score}
+              {formatScore(score)}
               <span className="text-3xl font-semibold text-slate-500">/10</span>
             </p>
             <p className="mt-3 text-xs font-medium text-slate-400">
@@ -136,7 +137,7 @@ export default async function ResultPage({ params }: Props) {
                   <div className="mb-1.5 flex justify-between text-[11px]">
                     <span className="text-slate-400">{item.label}</span>
                     <span className="tabular-nums font-semibold text-indigo-200">
-                      {s}/10
+                      {formatScore(s)}/10
                     </span>
                   </div>
                   <div className="h-1.5 overflow-hidden rounded-full bg-slate-800/80 ring-1 ring-white/[0.05]">

@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { AnalysisResult } from "@/types/analysis";
 import { SCORE_BREAKDOWN_KEYS } from "@/types/analysis";
 import { BADGE_META, type FashionBadgeId } from "@/lib/fashionBadges";
+import { formatScore } from "@/lib/formatScore";
 
 const SHARE_CARD_BARS = SCORE_BREAKDOWN_KEYS.slice(0, 4);
 const WATERMARK_URL = "fitrate-ai.vercel.app";
@@ -44,7 +45,7 @@ function buildShareText(result: AnalysisResult, badges: FashionBadgeId[], occasi
   const tip = shorten(result.mainFeedback, 100);
   const badgeLine = badges.length > 0 ? badges.join(" · ") : result.styleKeywords.slice(0, 2).join(" · ");
   return [
-    `Just got ${result.overallRating}/10 on FitRate AI 🔥`,
+    `Just got ${formatScore(result.overallRating)}/10 on FitRate AI 🔥`,
     badgeLine ? `${badgeLine}` : "",
     `"${tip}"`,
     `Rate your fit → ${APP_URL}`,
@@ -74,7 +75,7 @@ function ShareCardProgressBars({ result }: { result: AnalysisResult }) {
           <div key={item.key}>
             <div className="flex justify-between gap-2 text-[10px]">
               <span className="truncate text-slate-400">{item.label}</span>
-              <span className="shrink-0 tabular-nums font-semibold text-indigo-200">{score}/10</span>
+              <span className="shrink-0 tabular-nums font-semibold text-indigo-200">{formatScore(score)}/10</span>
             </div>
             <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/[0.06]">
               <motion.div
@@ -244,7 +245,7 @@ export const ShareableResultCard = forwardRef<HTMLDivElement, ShareableResultCar
 
                 <div className="rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/15 via-slate-950/40 to-violet-600/10 px-4 py-3.5 text-center ring-1 ring-indigo-400/20 backdrop-blur-sm">
                   <p className="text-[4rem] font-extrabold leading-none tracking-tight text-white tabular-nums drop-shadow-[0_0_36px_rgba(99,102,241,0.45)] sm:text-[4.25rem]">
-                    {result.overallRating}
+                    {formatScore(result.overallRating)}
                     <span className="text-2xl font-semibold text-indigo-300/90">/10</span>
                   </p>
                   <p className="mt-2 text-xs text-slate-300">

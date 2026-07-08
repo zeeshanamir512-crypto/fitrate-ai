@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { getSharedResult } from "@/lib/resultStore";
+import { formatScore } from "@/lib/formatScore";
 
 export const runtime = "nodejs";
 export const size = { width: 1200, height: 630 };
@@ -79,7 +80,7 @@ export default async function OgImage({ params }: Props) {
               textShadow: `0 0 60px ${scoreColor}66`,
             }}
           >
-            {score}
+            {formatScore(score)}
           </span>
           <span
             style={{

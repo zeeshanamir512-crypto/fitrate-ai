@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getBattle, getBattleVotes } from "@/lib/battleStore";
+import { formatScore } from "@/lib/formatScore";
 import BattleClient from "./BattleClient";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +19,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const scoreA = battle.resultA.result.overallRating;
   // Open battle (no challenger yet): lean into the challenge for shared links.
   const title = battle.resultB
-    ? `Outfit Battle: ${scoreA}/10 vs ${battle.resultB.result.overallRating}/10 | FitRate AI`
-    : `Outfit Battle: ${scoreA}/10 vs ? | FitRate AI`;
+    ? `Outfit Battle: ${formatScore(scoreA)}/10 vs ${formatScore(battle.resultB.result.overallRating)}/10 | FitRate AI`
+    : `Outfit Battle: ${formatScore(scoreA)}/10 vs ? | FitRate AI`;
   const description = battle.resultB
     ? `${battle.resultA.result.styleIdentity} vs ${battle.resultB.result.styleIdentity} — Vote for the best outfit!`
     : `${battle.resultA.result.styleIdentity} is waiting for a challenger — think you can beat this fit?`;
@@ -78,9 +79,9 @@ export default async function BattlePage({ params }: Props) {
             Outfit Battle
           </h1>
           <p className="mt-2 text-sm text-slate-400">
-            <span className="font-semibold text-indigo-300">{scoreA}/10</span>
+            <span className="font-semibold text-indigo-300">{formatScore(scoreA)}/10</span>
             {" "}vs{" "}
-            <span className="font-semibold text-violet-300">{scoreB !== null ? `${scoreB}/10` : "?"}</span>
+            <span className="font-semibold text-violet-300">{scoreB !== null ? `${formatScore(scoreB)}/10` : "?"}</span>
             {" "}— {scoreB !== null ? "Vote for the better fit" : "Waiting for a challenger"}
           </p>
         </div>

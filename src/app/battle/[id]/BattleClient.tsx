@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { BattleEntry, BattleVotes } from "@/lib/battleStore";
 import type { SharedResult } from "@/lib/resultStore";
+import { formatScore } from "@/lib/formatScore";
 import JoinBattlePanel from "./JoinBattlePanel";
 
 type Props = {
@@ -108,7 +109,7 @@ function OutfitCard({
         {/* Score */}
         <div className="mb-4 rounded-2xl border border-indigo-400/20 bg-gradient-to-br from-indigo-500/10 via-slate-950/50 to-violet-600/10 px-4 py-4 text-center ring-1 ring-indigo-400/15">
           <p className={`text-6xl font-extrabold leading-none tracking-tight tabular-nums sm:text-7xl ${scoreColor(score)}`}>
-            {score}
+            {formatScore(score)}
             <span className="text-2xl font-semibold text-slate-500">/10</span>
           </p>
           <p className="mt-2 text-xs font-medium text-slate-400">

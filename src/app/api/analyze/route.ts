@@ -25,7 +25,7 @@ type AnalyzeRequestPayload = {
 };
 
 const outputFormatExample: AnalysisResult = {
-  overallRating: 8,
+  overallRating: 8.4,
   aiConfidence: 84,
   detectedItems: {
     outerwear: "none visible",
@@ -38,12 +38,12 @@ const outputFormatExample: AnalysisResult = {
     styleVibe: "modern streetwear"
   },
   scoreBreakdown: {
-    fit: 8,
-    colorMatching: 7,
-    shoes: 7,
-    accessories: 7,
-    occasion: 8,
-    trendLevel: 7
+    fit: 8.3,
+    colorMatching: 7.2,
+    shoes: 7.4,
+    accessories: 7.1,
+    occasion: 7.9,
+    trendLevel: 7.6
   },
   scoreReasons: {
     fit: "The oversized hoodie and baggy cargos feel intentional and balanced by cleaner sneakers.",
@@ -99,7 +99,11 @@ const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // keep requests small and fast
 
 function clampScore(value: unknown): number {
   const n = Number(value ?? 7);
-  return Math.min(10, Math.max(1, Number.isFinite(n) ? n : 7));
+  const safe = Number.isFinite(n) ? n : 7;
+  // Quantize to one decimal place so the API never emits floating-point tails
+  // (e.g. 7.34 or 8.599999). Scores are intentionally decimal (1.0-10.0) to
+  // avoid clustering on whole numbers and .5s. NaN/missing still falls back to 7.
+  return Math.min(10, Math.max(1, Math.round(safe * 10) / 10));
 }
 
 function clampPercent(value: unknown): number {
@@ -1122,7 +1126,7 @@ ${JSON.stringify({ ...outputFormatExample, detectedOccasion: occasion })}
 
 Rules:
 - detectedOccasion: REQUIRED. Exactly one value from this list — the occasion that best fits the outfit: ${OCCASIONS.join(", ")}
-- overallRating and all score fields must be integers 1 to 10
+- overallRating and all score fields must be numbers from 1.0 to 10.0 with EXACTLY one decimal place (e.g. 7.3, 8.6, 9.1). Do NOT cluster on whole numbers or .5 values — use the decimal to express nuance between similar outfits.
 - aiConfidence: optional integer 0-100 based on image clarity and outfit visibility
 - include "detectedItems" with outerwear, top, bottoms, shoes, accessories[], mainColors[], silhouette, styleVibe
 - styleIdentity: 1 short sentence that captures style vibe

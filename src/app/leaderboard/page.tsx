@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { getLeaderboard, getWeekLabel } from "@/lib/leaderboardStore";
 import type { LeaderboardEntry } from "@/lib/leaderboardStore";
+import { formatScore } from "@/lib/formatScore";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +74,7 @@ function EntryCard({ entry, rank }: { entry: LeaderboardEntry; rank: number }) {
       {/* Score */}
       <div className="shrink-0 text-right">
         <p className={`text-2xl font-extrabold tabular-nums leading-none tracking-tight sm:text-3xl ${scoreColor(entry.score)}`}>
-          {entry.score}
+          {formatScore(entry.score)}
         </p>
         <p className="mt-0.5 text-[10px] font-medium text-slate-500">/10</p>
       </div>

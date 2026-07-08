@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import type { FitHistoryEntry } from "@/lib/fitHistory";
+import { formatScore } from "@/lib/formatScore";
 
 type Props = { history: FitHistoryEntry[] };
 
@@ -53,7 +54,7 @@ export function RecentFits({ history }: Props) {
               )}
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
               <p className={`absolute bottom-1.5 left-0 right-0 text-center text-[13px] font-bold tabular-nums ${scoreColor(entry.score)}`}>
-                {entry.score}
+                {formatScore(entry.score)}
                 <span className="text-[9px] font-medium text-slate-400">/10</span>
               </p>
             </div>

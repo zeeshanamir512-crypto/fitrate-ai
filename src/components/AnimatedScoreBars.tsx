@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import type { AnalysisResult } from "@/types/analysis";
 import { SCORE_BREAKDOWN_KEYS } from "@/types/analysis";
+import { formatScore } from "@/lib/formatScore";
 
 type AnimatedScoreBarsProps = {
   result: AnalysisResult;
@@ -45,7 +46,7 @@ export function AnimatedScoreBars({ result, animateKey }: AnimatedScoreBarsProps
                 transition={{ delay: reduceMotion ? 0 : 0.35 + index * 0.06 }}
                 className="text-lg font-bold tabular-nums text-indigo-200"
               >
-                {score}/10
+                {formatScore(score)}/10
               </motion.p>
             </div>
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-900 ring-1 ring-white/[0.06]">
