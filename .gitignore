@@ -11,4 +11,6 @@ out/
 npm-debug.log*
 .DS_Store
 Thumbs.db
-.claude/
+# Claude Code: ignore local state but version project skills
+.claude/*
+!.claude/skills/
