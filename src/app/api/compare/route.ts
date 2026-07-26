@@ -253,7 +253,7 @@ export async function POST(request: Request) {
       return jsonPayload({ error: MODERATION_UNAVAILABLE_MESSAGE }, 503);
     }
 
-    const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o";
+    const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-5.6-terra";
     const client = new OpenAI({
       apiKey,
       timeout: 90_000,
@@ -271,7 +271,7 @@ You will see TWO full-frame outfit photos in order:
 - Image A = Outfit A (first image)
 - Image B = Outfit B (second image)
 
-Evaluate BOTH images head-to-toe—shoes, pant hems, outer layers, bags, hats, headphones, chains, and proportions at frame edges matter. Assume photography may crop loosely; infer visible cues without treating relaxed street silhouettes as "sloppy by default".
+Evaluate BOTH images head-to-toe—shoes, pant hems, outer layers, bags, hats, watches, belts, headphones, chains, and proportions at frame edges matter. Assume photography may crop loosely; infer visible cues without treating relaxed street silhouettes as "sloppy by default".
 
 Scoring granularity:
 - Each outfit receives scoreA/scoreB as a number from 1 to 10 in HALF-POINT steps only: 1, 1.5, 2, …, 9.5, 10 (no tenths other than .5).
@@ -364,7 +364,13 @@ BRUTAL AI MODE (playful savage stylist — NOT toxic):
           ]
         }
       ],
-      max_tokens: 1100
+      // gpt-5.6-terra is a reasoning-tier model: Chat Completions requires
+      // max_completion_tokens (not max_tokens), and reasoning tokens are drawn
+      // from this same budget. Keep effort low (outfit comparison needs fast,
+      // structured JSON — not deep chain-of-thought) and leave headroom so
+      // reasoning overhead never starves the JSON response.
+      max_completion_tokens: 2000,
+      reasoning_effort: "low"
     });
 
     const outputText = completion.choices[0]?.message?.content;

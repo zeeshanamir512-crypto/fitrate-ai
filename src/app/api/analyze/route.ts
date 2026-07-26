@@ -1068,7 +1068,7 @@ export async function POST(request: Request) {
       return jsonPayload({ error: MODERATION_UNAVAILABLE_MESSAGE }, 503);
     }
 
-    const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o";
+    const model = process.env.OPENAI_VISION_MODEL?.trim() || "gpt-5.6-terra";
     const client = new OpenAI({
       apiKey,
       timeout: 90_000,
@@ -1095,7 +1095,7 @@ Step 1: identify visible outfit pieces first:
 - top
 - bottoms
 - shoes
-- accessories
+- accessories (report EVERY visible accessory, explicitly including watches, hats, and belts, as well as sunglasses, jewelry, bags, chains, and headphones)
 - main colors
 - silhouette
 - style category/vibe
@@ -1190,7 +1190,13 @@ Streetwear accessory & pants notes:
           ]
         }
       ],
-      max_tokens: 900
+      // gpt-5.6-terra is a reasoning-tier model: Chat Completions requires
+      // max_completion_tokens (not max_tokens), and reasoning tokens are drawn
+      // from this same budget. Keep effort low (outfit analysis needs fast,
+      // structured JSON — not deep chain-of-thought) and leave headroom so
+      // reasoning overhead never starves the JSON response.
+      max_completion_tokens: 2000,
+      reasoning_effort: "low"
     });
 
     const outputText = completion.choices[0]?.message?.content;

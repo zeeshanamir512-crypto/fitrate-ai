@@ -2,7 +2,7 @@ import OpenAI from "openai";
 
 /**
  * Image moderation via OpenAI's free omni-moderation endpoint. Runs BEFORE the paid
- * gpt-4o vision call in analyze/compare (so flagged images never reach it), and on
+ * vision call in analyze/compare (so flagged images never reach it), and on
  * thumbnails in save-result (the only user image that actually becomes public).
  *
  * Verdicts:

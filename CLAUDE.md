@@ -1,6 +1,6 @@
 # FitRate AI — Operating Manual
 
-AI outfit-rating app. Next.js 16 + React 19 + TypeScript + Tailwind, deployed on Vercel (fitrate-ai.vercel.app). OpenAI vision (gpt-4o-mini) rates outfit photos; Upstash Redis backs rate limits, shared results, battles, leaderboard. No auth, no DB.
+AI outfit-rating app. Next.js 16 + React 19 + TypeScript + Tailwind, deployed on Vercel (fitrate-ai.vercel.app). OpenAI vision (gpt-5.6-terra, overridable via `OPENAI_VISION_MODEL`) rates outfit photos; Upstash Redis backs rate limits, shared results, battles, leaderboard. No auth, no DB.
 
 ## Product context (drives prioritization)
 Indie project. Monetization plan: affiliate recommendations + Pro tier, **after** virality. The differentiator vs competitor Outfit is the **social layer** (Outfit Battles, weekly leaderboard, challenge/share links) — not raw AI quality. When sequencing work: social/viral features > monetization features. Visual identity ("Apple + Arc + TikTok + luxury streetwear": glassmorphism, neon indigo/violet/cyan) is settled — don't redesign it.
