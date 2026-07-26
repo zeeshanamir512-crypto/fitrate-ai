@@ -1018,7 +1018,7 @@ export default function Home() {
                         <img
                           src={previewUrl}
                           alt="Outfit preview"
-                          className="relative z-0 h-52 w-full object-cover object-center transition duration-500 group-hover:scale-[1.03] sm:h-64 md:h-72"
+                          className="relative z-0 mx-auto max-h-[30rem] w-auto max-w-full object-contain transition duration-500 group-hover:scale-[1.03]"
                         />
                       </>
                     ) : (
@@ -1122,7 +1122,7 @@ export default function Home() {
                       <img
                         src={previewUrlA}
                         alt="Outfit A preview"
-                        className="h-32 max-h-[200px] w-full object-cover object-center transition duration-500 group-hover:scale-[1.03] sm:h-36 sm:max-h-[220px]"
+                        className="h-56 w-full object-contain transition duration-500 group-hover:scale-[1.03] sm:h-64"
                       />
                     ) : (
                       <div className="flex h-32 items-center justify-center px-2 text-center text-[11px] text-slate-500 sm:h-36 sm:text-xs">
@@ -1190,7 +1190,7 @@ export default function Home() {
                       <img
                         src={previewUrlB}
                         alt="Outfit B preview"
-                        className="h-32 max-h-[200px] w-full object-cover object-center transition duration-500 group-hover:scale-[1.03] sm:h-36 sm:max-h-[220px]"
+                        className="h-56 w-full object-contain transition duration-500 group-hover:scale-[1.03] sm:h-64"
                       />
                     ) : (
                       <div className="flex h-32 items-center justify-center px-2 text-center text-[11px] text-slate-500 sm:h-36 sm:text-xs">

@@ -200,7 +200,7 @@ export default function JoinBattlePanel({ battleId, onJoined }: Props) {
           <>
             {previewUrl && (
               <div className="mb-4 overflow-hidden rounded-2xl">
-                <img src={previewUrl} alt="Your outfit" className="h-52 w-full object-cover object-top" />
+                <img src={previewUrl} alt="Your outfit" className="h-52 w-full object-contain" />
               </div>
             )}
 

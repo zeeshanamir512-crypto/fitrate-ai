@@ -101,7 +101,7 @@ function OutfitCard({
             <img
               src={result.thumbnailUrl}
               alt={`Outfit ${label}`}
-              className="h-52 w-full object-cover object-top"
+              className="h-52 w-full object-contain"
             />
           </div>
         )}
