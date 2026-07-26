@@ -221,7 +221,7 @@ export const ShareableResultCard = forwardRef<HTMLDivElement, ShareableResultCar
                   <img
                     src={outfitPreviewUrl}
                     alt=""
-                    className={`w-full object-cover object-center ${format === "story" ? "h-full" : "aspect-[4/5] max-h-[220px] sm:max-h-[240px]"}`}
+                    className={`w-full object-contain object-center ${format === "story" ? "h-full" : "aspect-[4/5] max-h-[220px] sm:max-h-[240px]"}`}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-transparent" />
                   <div className="absolute bottom-2 left-2 rounded-lg border border-white/15 bg-black/45 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-md">
