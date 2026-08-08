@@ -12,6 +12,7 @@ import { LiveAnalysisPreview } from "@/components/LiveAnalysisPreview";
 import { OccasionSelect, type OccasionMode } from "@/components/OccasionSelect";
 import { ShareableResultCard } from "@/components/ShareableResultCard";
 import { inferFashionBadges, sanitizeFashionBadges, type FashionBadgeId } from "@/lib/fashionBadges";
+import { LEADERBOARD_ENABLED } from "@/lib/features";
 import { addToFitHistory, loadFitHistory, makeThumbnail, saveFitHistory, type FitHistoryEntry } from "@/lib/fitHistory";
 import { prepareImageFile, readFileAsDataUrl, retainFile } from "@/lib/prepareImageFile";
 import { readApiJson } from "@/lib/readApiJson";
@@ -766,9 +767,11 @@ export default function Home() {
             <a href="#compare-results" className="fitrate-nav-link shrink-0 rounded-full transition hover:bg-white/[0.06] hover:text-white">
               Compare
             </a>
-            <a href="/leaderboard" className="fitrate-nav-link shrink-0 rounded-full transition hover:bg-white/[0.06] hover:text-white">
-              Leaderboard
-            </a>
+            {LEADERBOARD_ENABLED && (
+              <a href="/leaderboard" className="fitrate-nav-link shrink-0 rounded-full transition hover:bg-white/[0.06] hover:text-white">
+                Leaderboard
+              </a>
+            )}
             <a
               href="https://github.com"
               target="_blank"
@@ -1285,23 +1288,25 @@ export default function Home() {
                 )}
               </button>
               {battleError && <p className="text-center text-xs text-rose-300">{battleError}</p>}
-              <button
-                type="button"
-                onClick={handleSubmitToLeaderboard}
-                disabled={leaderboardSubmitting || leaderboardSubmitted}
-                className="w-full rounded-xl border border-amber-400/30 bg-gradient-to-r from-amber-500/10 via-yellow-500/8 to-amber-500/10 px-4 py-3 text-sm font-bold text-amber-200 ring-1 ring-amber-400/20 transition hover:border-amber-400/50 hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {leaderboardSubmitted ? (
-                  "✅ Added to this week's leaderboard"
-                ) : leaderboardSubmitting ? (
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-300/30 border-t-amber-200" />
-                    Submitting…
-                  </span>
-                ) : (
-                  "🏆 Submit to Leaderboard"
-                )}
-              </button>
+              {LEADERBOARD_ENABLED && (
+                <button
+                  type="button"
+                  onClick={handleSubmitToLeaderboard}
+                  disabled={leaderboardSubmitting || leaderboardSubmitted}
+                  className="w-full rounded-xl border border-amber-400/30 bg-gradient-to-r from-amber-500/10 via-yellow-500/8 to-amber-500/10 px-4 py-3 text-sm font-bold text-amber-200 ring-1 ring-amber-400/20 transition hover:border-amber-400/50 hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {leaderboardSubmitted ? (
+                    "✅ Added to this week's leaderboard"
+                  ) : leaderboardSubmitting ? (
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-amber-300/30 border-t-amber-200" />
+                      Submitting…
+                    </span>
+                  ) : (
+                    "🏆 Submit to Leaderboard"
+                  )}
+                </button>
+              )}
             </div>
           </div>
 

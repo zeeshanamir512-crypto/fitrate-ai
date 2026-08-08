@@ -9,6 +9,9 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Weekly Leaderboard | FitRate AI",
   description: "The top-rated outfits this week, ranked by AI score.",
+  // Hidden feature (see LEADERBOARD_ENABLED): keep it out of search results too,
+  // so the page isn't reachable via Google while it's pulled from the UI.
+  robots: { index: false, follow: false },
 };
 
 function rankDisplay(rank: number): string {

@@ -5,6 +5,7 @@ import { getSharedResult } from "@/lib/resultStore";
 import { SCORE_BREAKDOWN_KEYS } from "@/types/analysis";
 import { LeaderboardSubmitButton } from "@/components/LeaderboardSubmitButton";
 import { StartBattleButton } from "@/components/StartBattleButton";
+import { LEADERBOARD_ENABLED } from "@/lib/features";
 import { formatScore } from "@/lib/formatScore";
 
 export const dynamic = "force-dynamic";
@@ -208,7 +209,7 @@ export default async function ResultPage({ params }: Props) {
               Can you beat this score?
             </Link>
             <StartBattleButton resultId={data.id} />
-            <LeaderboardSubmitButton resultId={data.id} />
+            {LEADERBOARD_ENABLED && <LeaderboardSubmitButton resultId={data.id} />}
             <Link
               href="/"
               className="block w-full rounded-xl border border-white/[0.1] bg-slate-950/60 px-4 py-3.5 text-center text-sm font-semibold text-slate-300 ring-1 ring-white/[0.05] transition hover:border-indigo-400/30 hover:text-white active:scale-[0.98]"
