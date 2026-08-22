@@ -28,6 +28,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
+    // Hidden feature (see BATTLES_ENABLED): keep battle pages out of search
+    // results while the entry points are pulled. Direct shared links still work.
+    robots: { index: false, follow: false },
     openGraph: {
       title,
       description,

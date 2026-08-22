@@ -5,7 +5,7 @@ import { getSharedResult } from "@/lib/resultStore";
 import { SCORE_BREAKDOWN_KEYS } from "@/types/analysis";
 import { LeaderboardSubmitButton } from "@/components/LeaderboardSubmitButton";
 import { StartBattleButton } from "@/components/StartBattleButton";
-import { LEADERBOARD_ENABLED } from "@/lib/features";
+import { BATTLES_ENABLED, LEADERBOARD_ENABLED } from "@/lib/features";
 import { formatScore } from "@/lib/formatScore";
 
 export const dynamic = "force-dynamic";
@@ -208,7 +208,7 @@ export default async function ResultPage({ params }: Props) {
             >
               Can you beat this score?
             </Link>
-            <StartBattleButton resultId={data.id} />
+            {BATTLES_ENABLED && <StartBattleButton resultId={data.id} />}
             {LEADERBOARD_ENABLED && <LeaderboardSubmitButton resultId={data.id} />}
             <Link
               href="/"

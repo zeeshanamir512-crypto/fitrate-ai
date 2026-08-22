@@ -12,7 +12,7 @@ import { LiveAnalysisPreview } from "@/components/LiveAnalysisPreview";
 import { OccasionSelect, type OccasionMode } from "@/components/OccasionSelect";
 import { ShareableResultCard } from "@/components/ShareableResultCard";
 import { inferFashionBadges, sanitizeFashionBadges, type FashionBadgeId } from "@/lib/fashionBadges";
-import { LEADERBOARD_ENABLED } from "@/lib/features";
+import { BATTLES_ENABLED, LEADERBOARD_ENABLED } from "@/lib/features";
 import { addToFitHistory, loadFitHistory, makeThumbnail, saveFitHistory, type FitHistoryEntry } from "@/lib/fitHistory";
 import { prepareImageFile, readFileAsDataUrl, retainFile } from "@/lib/prepareImageFile";
 import { readApiJson } from "@/lib/readApiJson";
@@ -1272,22 +1272,26 @@ export default function Home() {
             />
 
             <div className="mt-4 space-y-2.5">
-              <button
-                type="button"
-                onClick={handleStartBattle}
-                disabled={battleLoading}
-                className="w-full rounded-xl border border-violet-400/30 bg-gradient-to-r from-violet-600/20 via-indigo-600/20 to-violet-600/20 px-4 py-3 text-sm font-bold text-violet-200 ring-1 ring-violet-400/20 transition hover:border-violet-400/50 hover:bg-gradient-to-r hover:from-violet-600/30 hover:via-indigo-600/30 hover:to-violet-600/30 hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {battleLoading ? (
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-300/30 border-t-violet-200" />
-                    Saving…
-                  </span>
-                ) : (
-                  "⚔ Start a Battle"
-                )}
-              </button>
-              {battleError && <p className="text-center text-xs text-rose-300">{battleError}</p>}
+              {BATTLES_ENABLED && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleStartBattle}
+                    disabled={battleLoading}
+                    className="w-full rounded-xl border border-violet-400/30 bg-gradient-to-r from-violet-600/20 via-indigo-600/20 to-violet-600/20 px-4 py-3 text-sm font-bold text-violet-200 ring-1 ring-violet-400/20 transition hover:border-violet-400/50 hover:bg-gradient-to-r hover:from-violet-600/30 hover:via-indigo-600/30 hover:to-violet-600/30 hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {battleLoading ? (
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-300/30 border-t-violet-200" />
+                        Saving…
+                      </span>
+                    ) : (
+                      "⚔ Start a Battle"
+                    )}
+                  </button>
+                  {battleError && <p className="text-center text-xs text-rose-300">{battleError}</p>}
+                </>
+              )}
               {LEADERBOARD_ENABLED && (
                 <button
                   type="button"
